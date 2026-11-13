@@ -1,5 +1,5 @@
 import { card, CRESTS, DECKS, type CardRef, type DeckChoice } from "@sigilbound/engine";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { describeAction } from "../../core/describe.js";
 import { useGame } from "../context.js";
 import { useStore } from "../useStore.js";
@@ -93,13 +93,13 @@ export function Mulligan() {
   return (
     <div className="absolute inset-0 bg-ink/70 flex flex-col items-center justify-center gap-4 z-30">
       <div className="font-pixel text-[18px] text-gold">Opening hand</div>
-      <div className="text-[18px] opacity-85">Pick cards to send back and draw again. Click a card to read it.</div>
+      <div className="text-[18px] opacity-85">Pick cards to send back and draw again (1–9 or Space toggles). Click a card to read it.</div>
       <div className="flex gap-3">
         {hand.map((c, i) => {
           const marked = mulligan.includes(c.uid);
           return (
             <div key={c.uid} className={`flex flex-col items-center gap-2 ${focus?.area === "hand" && focus.index === i ? "focus-ring" : ""}`}>
-              <button className={`transition-transform hover:-translate-y-1 ${marked ? "opacity-40" : ""}`} onClick={() => actions.openPopup({ kind: "hand", uid: c.uid })}>
+              <button className={`transition-transform hover:-translate-y-1 ${marked ? "opacity-40" : ""}`} onClick={() => actions.inspect({ kind: "hand", uid: c.uid })}>
                 <CardFace id={c.id} />
               </button>
               <button className={`btn !text-[9px] ${marked ? "btn-red" : ""}`} onClick={() => actions.toggleMulligan(c.uid)}>
@@ -128,10 +128,12 @@ export function AskPosition() {
   return (
     <div className="fixed inset-0 z-40" onPointerDown={() => actions.answerAsk(null)}>
       <div
-        className="absolute flex flex-col items-center gap-1 pop-in"
+        className="absolute"
         style={{ left: r.left + r.width / 2, top: r.top + r.height / 2, transform: "translate(-50%, -50%)" }}
         onPointerDown={(e) => e.stopPropagation()}
       >
+      {/* pop-in animates transform, so it lives on an inner box: on the outer one it would undo the centring. */}
+      <div className="flex flex-col items-center gap-1 pop-in">
         <div className="font-pixel text-[10px] bg-ink px-2 py-1">{id ? card(id).name : ""}: position?</div>
         <div className="flex gap-2">
           {(["atk", "def"] as const).map((p) => (
@@ -142,6 +144,7 @@ export function AskPosition() {
           ))}
         </div>
         <div className="text-[14px] bg-ink/80 px-2">Enter confirms · Esc cancels</div>
+      </div>
       </div>
     </div>
   );
@@ -164,10 +167,10 @@ export function Banner() {
   const { ui } = useGame();
   const banner = useStore(ui.duel, (d) => d.banner);
   if (!banner) return null;
-  const color = banner.tone === "me" ? "bg-gold text-ink" : banner.tone === "opp" ? "bg-[#5a3a7a] text-paper" : "bg-hp text-paper";
+  const color = banner.tone === "me" ? "bg-gold text-ink" : banner.tone === "opp" ? "bg-plum text-paper" : "bg-hp text-paper";
   return (
     <div key={banner.id} className="absolute inset-x-0 top-[40%] z-30 pointer-events-none overflow-hidden banner-wrap">
-      <div className={`banner font-pixel text-[30px] py-3 text-center ${color}`} style={{ textShadow: "3px 3px 0 #1c1a24" }}>
+      <div className={`banner font-pixel text-[30px] py-3 text-center ${color}`} style={{ textShadow: "3px 3px 0 #14121c" }}>
         {banner.text}
       </div>
     </div>
@@ -194,19 +197,24 @@ export function ConfirmEnd() {
 
 const KEYS: [string, string][] = [
   ["← →", "Move along your hand (the card lifts)"],
-  ["1–9", "Open that hand card"],
-  ["Enter / Space", "Open the focused card"],
+  ["1–9", "Select that hand card (its menu opens above it)"],
+  ["Enter", "Select the focused card"],
+  ["I / Space", "Read the hovered or focused card, big"],
   ["↑ / Tab", "Focus your monsters; ← → between them"],
   ["↓ / Tab", "Back to your hand"],
-  ["In a card: 1/2/3 or ← →", "Pick the lane (or target)"],
-  ["In a card: A / D (↑ ↓)", "Attack or Defense position"],
-  ["In a card: B", "Bind as a Sigil"],
-  ["In a card: S", "Switch a monster's position"],
-  ["In a card: Enter", "Confirm (or Attack, on a monster)"],
-  ["Esc", "Back one step, then close"],
+  ["Selected: 1/2/3", "Pick that lane (or the 1st/2nd/3rd target)"],
+  ["Selected: ← → then Enter", "Cycle targets, then confirm"],
+  ["Selected: A / D", "Attack or Defense position (A on a monster: attack)"],
+  ["Selected: B", "Bind as a Sigil"],
+  ["Selected: S / M / C", "Switch position / Move / Crest (your monster)"],
+  ["Esc", "Back one step, then unselect"],
   ["E", "End turn"],
   ["P", "Pass an Ambush window (1–9 plays one)"],
-  ["L", "Show the duel log"],
+  ["Rival's turn: S or →", "Skip this move's animation"],
+  ["Rival's turn: F", "Fast-forward until you need to decide"],
+  ["Rival's turn: Shift+F / End", "Skip to the end of its turn (still stops for your Ambush windows)"],
+  ["Any key / click", "Skip a rival card reveal"],
+  ["L", "Open or close the duel log"],
   ["?", "This help"],
 ];
 
@@ -218,7 +226,7 @@ export function Help() {
     <div className="absolute inset-0 bg-ink/60 flex items-center justify-center z-50" onPointerDown={() => actions.toggle("help")}>
       <div className="panel p-4 flex flex-col gap-2 pop-in max-w-[640px] max-h-[92vh] overflow-y-auto" onPointerDown={(e) => e.stopPropagation()}>
         <div className="font-pixel text-[13px] text-gold">Controls</div>
-        <div className="text-[17px] opacity-85">Mouse: drag a card onto the board to play it, or onto your Sigil row to bind it. Drag a monster onto an enemy to attack, or to a lane next to it to move. Click any card to read it. Right-click your monster to switch its position.</div>
+        <div className="text-[17px] opacity-85">Mouse: click a card to select it; its choices open beside it and the places it can go glow on the board, so click one. Or drag the card straight there (your Sigil row binds it). Click your monster, then a red enemy, to attack. Right-click your monster to switch position. Hover a card for its keywords; hover longer in your hand to see it big.</div>
         <table className="text-[17px]">
           <tbody>
             {KEYS.map(([k, v]) => (
@@ -308,64 +316,6 @@ export function DeckList() {
         <CardGrid entries={grouped(ids).map((e) => ({ ...e, key: e.id }))} onPick={(id) => actions.openPopup({ kind: "card", id })} />
       </div>
     </div>
-  );
-}
-
-export function LogDrawer() {
-  const { ui, actions } = useGame();
-  const log = useStore(ui.duel, (d) => d.log);
-  const open = useStore(ui.duel, (d) => d.logOpen);
-  const end = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [log, open]);
-  if (!open) return null;
-  const tone = { mine: "text-[#b4e08a]", theirs: "text-[#ffb3a6]", turn: "text-gold font-pixel text-[10px] mt-1", plain: "" };
-  return (
-    <div className="absolute right-2 top-14 bottom-40 w-[300px] panel p-2 flex flex-col z-20 pop-in">
-      <div className="flex items-center font-pixel text-[10px] text-paper-dark mb-1">
-        <span>Duel log</span><div className="flex-1" /><button className="underline" onClick={() => actions.toggle("logOpen")}>close (L)</button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto bg-ink/60 px-2 py-1 text-[15px] leading-[1.05]">
-        {log.map((l) => <div key={l.id} className={tone[l.tone]}>{l.text}</div>)}
-        <div ref={end} />
-      </div>
-    </div>
-  );
-}
-
-/** Phase, End turn and the few buttons not tied to one card. */
-export function TurnControls() {
-  const { ui, actions } = useGame();
-  const update = useStore(ui.duel, (d) => d.update);
-  if (!update) return null;
-  const s = update.view.state, me = update.view.you;
-  const legal = update.legal;
-  const mine = s.active === me && s.step !== "mulligan" && s.step !== "over";
-  const tide = legal.find((a) => a.type === "crest" && a.lane === undefined);
-  const pl = s.players[me];
-  const phase = s.step === "over" ? "Duel over" : s.step === "mulligan" ? "Mulligan" : s.window ? (s.window.responder === me ? "Ambush window!" : "Rival may Ambush…")
-    : !mine ? `Rival's turn${s.step === "attack" ? " · attacking" : ""}` : s.step === "attack" ? "Your attack step" : "Your turn · Main";
-  const hint = mine && s.step === "main" ? (pl.bound ? "Sigil bound this turn." : "No bind yet: you'll draw 1 extra at the end.") : "";
-  return (
-    <>
-      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-end gap-2 z-10 w-[128px]">
-        <div className={`font-pixel text-[11px] px-2 py-1 text-right ${mine ? "bg-gold text-ink" : "bg-ink/80 text-paper"}`}>Turn {s.turn}<br />{phase}</div>
-        {hint ? <div className="text-[15px] text-right leading-tight bg-ink/70 px-1">{hint}</div> : null}
-        {legal.some((a) => a.type === "attackStep") ? (
-          <button className="btn btn-red" onClick={() => actions.act({ type: "attackStep" })}>Attack step ⚔</button>
-        ) : null}
-        {tide ? <button className="btn" onClick={() => actions.act(tide)}>Tide crest +2 LP</button> : null}
-        {legal.some((a) => a.type === "endTurn") ? (
-          <button className="btn btn-gold !text-[14px] !py-3" onClick={() => actions.endTurn(true)}>End turn (E)</button>
-        ) : null}
-        <div className="text-[14px] text-right opacity-70 bg-ink/60 px-1">{CRESTS[pl.crest].name} crest: {CRESTS[pl.crest].text}</div>
-      </div>
-      <div className="absolute left-2 top-2 flex gap-1 z-10">
-        <button className="btn !text-[9px]" onClick={() => actions.leave()}>Menu</button>
-        <button className="btn !text-[9px]" onClick={() => { if (confirm("Concede this duel?")) actions.act({ type: "concede" }); }}>Concede</button>
-        <button className="btn !text-[9px]" onClick={() => actions.toggle("logOpen")}>Log (L)</button>
-        <button className="btn !text-[9px]" onClick={() => actions.toggle("help")}>? Keys</button>
-      </div>
-    </>
   );
 }
 

@@ -1,3 +1,5 @@
+import { card } from "@sigilbound/engine";
+
 /**
  * Every keyword and rules term a card can show, explained in one place. Wording follows RULES.md v0.6 (sections 5,
  * 7, 8, 9 and 10). The card popup underlines these and shows the text on hover.
@@ -115,5 +117,17 @@ export function splitKeywords(text: string): TextPart[] {
     last = i + m[0].length;
   }
   if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/** Rules words on a card, as KEYWORDS keys: its kind (spells), then keywords in its text, in order, once each. */
+export function keywordsOf(id: string): string[] {
+  const def = card(id);
+  if (def.kind === "hidden") return [];
+  const out: string[] = [];
+  if (def.kind !== "monster") out.push(def.kind);
+  for (const p of splitKeywords(def.text ?? "")) {
+    if (p.kw && p.kw !== "atk" && p.kw !== "def" && !out.includes(p.kw)) out.push(p.kw);
+  }
   return out;
 }

@@ -126,12 +126,24 @@ export class PostFx {
     w.uLightCount = lights.length;
     w.uLights = this.lightBuf;
     w.uLightColors = this.colorBuf;
+    if (this.level === "high") this.occlude();
+  }
 
-    if (this.level === "high") {
-      // The occluder mask: the casters drawn again into an offscreen texture (alpha is what matters).
-      const r = this.app.renderer;
-      this.layers.casters.forEach((c, i) => r.render({ container: c, target: this.occ, clear: i === 0 }));
-    }
+  /**
+   * The occluder mask: the casters drawn again into an offscreen texture (alpha is what matters), before the main
+   * render.
+   *
+   * renderer.render() makes each caster a render group of its own (enableRenderGroup), so turn that off again right
+   * after. Left on, the board's sharp labels (ATK/DEF plates, pile counts, LP), which live inside the casters but
+   * draw through the label RenderLayer, stop being rebuilt into the main render when they're recreated: new labels
+   * vanish, and the next in-place update of one throws inside Pixi, which stops the ticker and freezes the board.
+   */
+  private occlude(): void {
+    const r = this.app.renderer;
+    this.layers.casters.forEach((c, i) => {
+      r.render({ container: c, target: this.occ, clear: i === 0 });
+      c.disableRenderGroup();
+    });
   }
 
   destroy(): void {

@@ -75,6 +75,9 @@ export class GameSocket implements PlayerLink {
           owned.add(msg.duelId);
           this.watch(ws, msg.duelId, watching);
           ws.send(JSON.stringify(update));
+        } else if (msg.t === "hurry") {
+          if (!owned.has(msg.duelId)) return error("not your duel");
+          duels.hurry(msg.duelId, msg.until);
         } else {
           if (!owned.has(msg.duelId)) return error("not your duel");
           duels.act(msg.duelId, msg.action as Action);

@@ -30,6 +30,7 @@ const SIGIL_ORIGIN = { opp: { x: 4, y: 36 }, me: { x: 4, y: 120 } };
 const DECK_AT = { opp: { x: 6, y: 10 }, me: { x: 6, y: 190 } };
 const DISCARD_AT = { opp: { x: 284, y: 52 }, me: { x: 284, y: 126 } };
 const LP_AT = { opp: { x: 280, y: 14 }, me: { x: 280, y: 186 } };
+const REVEAL_AT = { x: 40, y: 100 };
 
 export type Side = "me" | "opp";
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -103,6 +104,13 @@ export function rectOfKey(key: string): Rect | null {
   if (key === "face") return FACE;
   if (key === "field") return FIELD;
   if (key === "sigils") return sigilZone("me");
+  if (key === "center") return { x: BOARD_W / 2 - 1, y: BOARD_H / 2 - 1, w: 2, h: 2 };
+  // Where the rival's revealed card holds: over the Sigil column, so the lanes it hits stay in view.
+  if (key === "revealAt") return { x: REVEAL_AT.x - 1, y: REVEAL_AT.y - 1, w: 2, h: 2 };
+  if (key === "hand:opp") return { x: 280, y: 32, w: 50, h: 12 };
+  if (key === "hand:me") return { x: 120, y: BOARD_H - 2, w: 96, h: 2 };
+  if (a === "sigils") return sigilZone(b as Side);
+  if (a === "lp") return { ...LP_AT[b as Side], w: 36, h: 21 };
   if (a === "deck") return deckRect(b as Side);
   if (a === "discard") return discardRect(b as Side);
   if (b === "monster") return monsterRect(a as Side, Number(c));
@@ -125,6 +133,8 @@ class MonsterView {
   readonly artY: number;
   readonly overlay = new Container();
   position: "atk" | "def";
+  /** Keyword badges drawn on the card, with their spot relative to the holder (for hover tooltips). */
+  badges: { kw: string; x: number; y: number }[] = [];
   constructor(readonly uid: number, readonly id: string, readonly side: Side, position: "atk" | "def") {
     // A soft drop shadow toward the bottom right (the light is top left); it turns with the card.
     this.shadow = new Graphics();
@@ -168,11 +178,13 @@ class MonsterView {
     if (hasLeap(s, lane, m)) badges.push("leap");
     if (def.rush && s.players[p].sigils.length <= 3) badges.push("rush");
     if (m.atkPerm || m.defPerm) badges.push("awaken");
+    this.badges = [];
     badges.forEach((b, i) => {
       const bs = new Sprite(tex(badgeCanvas(b)));
       const top = m.position === "def" ? -CARD_W / 2 : -CARD_H / 2;
       const right = m.position === "def" ? CARD_H / 2 : CARD_W / 2;
       bs.position.set(right - 8 - i * 8, top + 1);
+      this.badges.push({ kw: b, x: right - 8 - i * 8, y: top + 1 });
       if (b === "guard" && !isGuarding(m)) bs.alpha = 0.4;
       this.overlay.addChild(bs);
     });
@@ -344,6 +356,39 @@ export class BoardView {
     return out;
   }
 
+  /**
+   * The key among `keys` nearest a client point, if its place is within `slack` board pixels: drops and clicks that
+   * miss a slot by a little still land. Exact hits always win (distance 0).
+   */
+  nearest(keys: Iterable<string>, clientX: number, clientY: number, slack = 14): string | null {
+    const { x, y } = this.toBoard(clientX, clientY);
+    let best: string | null = null, bestD = Infinity;
+    for (const key of keys) {
+      const r = rectOfKey(key);
+      if (!r || key === "field") continue;
+      const dx = Math.max(r.x - x, 0, x - (r.x + r.w)), dy = Math.max(r.y - y, 0, y - (r.y + r.h));
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; best = key; }
+    }
+    return bestD <= slack ? best : null;
+  }
+
+  /** The keyword badge under a client point (a monster's Guard/Leap/Rush/Awaken mark), if any. */
+  badgeAt(clientX: number, clientY: number): { key: string; kw: string } | null {
+    const { x, y } = this.toBoard(clientX, clientY);
+    for (const [key, v] of this.monsters) {
+      const h = v.holder;
+      for (const b of v.badges) {
+        const bx = h.x + b.x, by = h.y + b.y;
+        if (x >= bx - 1 && x < bx + 8 && y >= by - 1 && y < by + 8) {
+          const [side, lane] = key.split(":");
+          return { key: `${side}:monster:${lane}`, kw: b.kw };
+        }
+      }
+    }
+    return null;
+  }
+
   /** Where a board key sits on screen (client pixels), for HUD overlays. */
   clientRect(key: string): DOMRect | null {
     const r = rectOfKey(key);
@@ -406,12 +451,71 @@ export class BoardView {
     g.rect(R(b.x) - 2, R(b.y) - 2, 4, 4).fill({ color });
   }
 
+  /**
+   * Light for a rival card revealed by the HUD (which replaces showCard's own flash). Face-down plays pass "hidden"
+   * and give off no light, so the shader layer never hints at what they are.
+   */
+  revealLight(id: string): void {
+    if (id === "hidden") return;
+    const def = card(id);
+    const color = def.kind === "monster" ? AFFINITY[def.affinity].accentGlow : PAL.arc3;
+    lightFlash(REVEAL_AT.x, REVEAL_AT.y, hex(color), 80, 700);
+  }
+
+  /** Pixel beams from where a revealed card holds to each target. Returns a function that clears them. */
+  beam(keys: string[], color = UI.target): () => void {
+    const g = new Graphics();
+    this.fx.addChild(g);
+    const from = REVEAL_AT;
+    const ends = keys.map((k) => rectOfKey(k)).filter((r): r is Rect => !!r);
+    const col = hex(color);
+    let gone = false;
+    const draw = (k: number) => {
+      if (gone) return;
+      g.clear();
+      for (const r of ends) {
+        const to = { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+        const dist = Math.hypot(to.x - from.x, to.y - from.y);
+        const n = Math.max(1, Math.floor((dist * k) / 4));
+        for (let i = 1; i <= n; i++) {
+          const q = (i * 4) / dist;
+          if (q > 1) break;
+          const px = R(lerp(from.x, to.x, q)), py = R(lerp(from.y, to.y, q));
+          g.rect(px - 1, py - 1, 3, 3).fill({ color: 0x1c1a24 });
+          g.rect(px - 1, py - 2, 3, 3).fill({ color: col });
+        }
+        if (k >= 1) {
+          border(g, { x: r.x - 2, y: r.y - 2, w: r.w + 4, h: r.h + 4 }, col, 1, 2);
+          g.rect(r.x, r.y, r.w, r.h).fill({ color: col, alpha: 0.18 });
+        }
+      }
+    };
+    void this.tw(240, (k) => draw(ease(k))).then(() => {
+      if (!gone) for (const r of ends) lightFlash(r.x + r.w / 2, r.y + r.h / 2, col, 36, 420, 1.1);
+    });
+    return () => {
+      if (gone) return;
+      gone = true;
+      void this.tw(160, (k) => { g.alpha = 1 - k; }).then(() => g.destroy());
+    };
+  }
+
   // ---- tweens ----
 
   private tw(dur: number, step: (k: number) => void, delay = 0): Promise<void> {
     return new Promise((resolve) => {
       this.tweens.push({ t0: performance.now() + delay * this.speed, dur: dur * this.speed, step, resolve });
     });
+  }
+
+  /** Finish every running animation now (skipping the rival's move). */
+  flush(): void {
+    const all = this.tweens;
+    this.tweens = [];
+    for (const tw of all) {
+      try { tw.step(1); } catch { /* gone */ }
+      tw.resolve();
+    }
   }
 
   wait(ms: number): Promise<void> {
@@ -725,7 +829,7 @@ export class BoardView {
   // ---- events ----
 
   /** Play one event. Resolves when the next event may start. */
-  async animate(e: GameEvent, next: GameState, me: PlayerId): Promise<void> {
+  async animate(e: GameEvent, next: GameState, me: PlayerId, revealed = false): Promise<void> {
     this.me = me;
     if (this.speed === 0) return;
     const side = "p" in e ? this.sideOf(e.p) : "me";
@@ -840,7 +944,7 @@ export class BoardView {
       case "flip": {
         const key = `${side}:${e.lane}`;
         const sv = this.spells.get(key);
-        await this.showCard(e.card, side === "me" ? "FLIP!" : "RIVAL FLIPS", "#f2c14e");
+        if (!revealed) await this.showCard(e.card, side === "me" ? "FLIP!" : "RIVAL FLIPS", "#f2c14e");
         if (sv) {
           this.spells.delete(key);
           const spr = sv.sprite;
@@ -850,10 +954,10 @@ export class BoardView {
         return;
       }
       case "cast":
-        await this.showCard(e.card, side === "me" ? "CAST" : "RIVAL CASTS", "#9fd3ff");
+        if (!revealed) await this.showCard(e.card, side === "me" ? "CAST" : "RIVAL CASTS", "#9fd3ff");
         return;
       case "ambush":
-        await this.showCard(e.card, "AMBUSH!", UI.target);
+        if (!revealed) await this.showCard(e.card, "AMBUSH!", UI.target);
         return;
       case "crest": {
         if (e.lane !== undefined) {

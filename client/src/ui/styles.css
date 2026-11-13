@@ -32,6 +32,8 @@
 }
 
 html, body, #ui { height: 100%; margin: 0; }
+/* clip, not hidden: hidden boxes can still be scrolled by focus or scrollIntoView, which slid the whole duel up. */
+html, body, #ui { overflow: clip; }
 body {
   background: var(--color-night);
   color: var(--color-paper);
@@ -106,20 +108,27 @@ canvas.board-canvas { display: block; }
 /* Keyword tooltips: underlined words with a pixel-panel tip. */
 .kw { position: relative; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; outline: none; }
 .kw-tip {
-  display: none; position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%);
-  width: 240px; z-index: 60; padding: 8px 10px; font-family: var(--font-body); font-size: 17px; line-height: 1.05;
+  position: fixed; z-index: 100; padding: 8px 10px; font-family: var(--font-body); font-size: 17px; line-height: 1.05;
   text-transform: none; text-align: left; font-weight: normal; letter-spacing: normal;
   background: var(--color-night); color: var(--color-paper);
   box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--color-gold), inset 0 0 0 6px var(--color-ink), 0 4px 0 0 #14121caa;
   padding: 10px 12px;
-  pointer-events: none; white-space: normal;
+  pointer-events: none; white-space: normal; display: block;
 }
-.kw:hover > .kw-tip, .kw:focus > .kw-tip { display: block; }
+.kw-chip {
+  font-family: var(--font-pixel); font-size: 9px; text-transform: uppercase; padding: 1px 4px; cursor: help; outline: none;
+  background: var(--color-ink); color: var(--color-gold); box-shadow: inset 0 0 0 1px var(--color-gold);
+}
+.kw-chip:hover, .kw-chip:focus { background: var(--color-gold); color: var(--color-ink); }
 
 /* The fanned hand. */
+/* Once hovered, the card's hover area also covers the space it lifts into (::before), so the pointer stays "on" the
+   card while it moves: no flicker at its bottom edge. Unhovered, that area lets clicks through to the board. */
 .hand-card { transform: translateX(var(--x)) translateY(var(--y)) rotate(var(--r)); transition: transform 120ms ease-out; }
+.hand-card::before { content: ""; position: absolute; left: 0; right: 0; top: -52px; bottom: 0; pointer-events: none; }
+.hand-card.hoverable:hover::before, .hand-card.lifted::before { pointer-events: auto; }
 .hand-card .card-inner { position: relative; transition: transform 120ms ease-out; }
-.hand-card .card-inner.hoverable:hover, .hand-card.lifted .card-inner { transform: translateY(-46px) rotate(calc(var(--r) * -1)) scale(1.08); }
+.hand-card.hoverable:hover .card-inner, .hand-card.lifted .card-inner { transform: translateY(-46px) rotate(calc(var(--r) * -1)) scale(1.08); }
 .hand-card .card-inner.playable { box-shadow: 0 0 0 2px var(--color-gold); }
 .hand-card.draw-in { animation: draw-in 420ms ease-out both; }
 @keyframes draw-in {
@@ -210,4 +219,15 @@ html[data-gfx="high"] .cardfx:hover > .cardfx-holo, html[data-gfx="high"] .cardf
 @keyframes drift { from { background-position: 0 0; } to { background-position: 52px 0; } }
 
 /* Graphics menu (ui/hud/GraphicsToggle.tsx). */
-.gfx-toggle { position: fixed; left: 8px; bottom: 8px; z-index: 70; }
+/* Bottom right: the bottom-left corner is the turn dock (End turn, skip controls). */
+.gfx-toggle { position: fixed; right: 8px; bottom: 8px; z-index: 5; } /* under menus, popups and reveals */
+
+/* ---- controls HUD in the pixel theme (log strip, turn chip, hints, stat plates) ---- */
+.hud-strip {
+  background: color-mix(in srgb, var(--color-night) 92%, transparent); color: var(--color-paper);
+  box-shadow: inset 0 0 0 1px var(--color-ink), inset 0 0 0 2px var(--color-gold-dark), 0 2px 0 0 #14121caa;
+}
+.hud-well { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-deep), inset 2px 2px 0 1px #00000055; }
+.stat-plate { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-light); }
+.text-atk { color: #ffe08a; }
+.text-def { color: #d6f6ff; }

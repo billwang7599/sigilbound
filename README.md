@@ -29,19 +29,24 @@ Open http://localhost:5173, pick a deck, and play the AI (it plays the other dec
 
 ## Playing
 
-- **Drag** a hand card onto the board: a monster onto one of your lanes (then pick Attack or Defense on the slot), a
-  Prepared spell onto a spell slot, a targeted spell onto its target, any other spell anywhere on the lanes, or any card
-  onto your **Sigil row** (left) to bind it. Legal places glow while you drag.
-- **Drag** one of your monsters onto an enemy (or the rival's corner, top right) to attack, even from the Main step,
-  or onto a lane next to it to move. Right-click your monster to switch its position.
-- **Click** any card (hand, board, Sigils, deck or discard lists) for a big readable popup. Hover the underlined
-  keywords for what they mean (all definitions live in `client/src/core/keywords.ts`). A hand card's popup offers
-  lane and position buttons and Bind; your monster's popup offers Attack, Switch position, Crest and Move.
-- **Piles:** your deck (top-left of your Sigil row) opens a list of what's left in it, grouped and sorted by cost,
-  never in draw order. Discard piles (right) list their cards.
-- **Keyboard:** ← → along the hand, 1–9 opens a card, ↑/Tab to your monsters, Enter opens, inside a popup 1/2/3 lane,
-  A/D position, B bind, Enter confirm, Esc back. E ends the turn, P passes an Ambush window, L shows the log, ? lists
-  everything.
+- **Select** a hand card (click it, or press its number): it lifts and a small menu opens beside it. The places it can
+  go glow on the board: click one (or press 1/2/3). A monster then asks Attack or Defense right on the slot. Bind it
+  with **B**, the menu button, or by clicking your glowing **Sigil row**. Nothing docks on the right side.
+- **Drag** works too: drop a card on a glowing place (a near miss snaps to the closest legal one).
+- **Your monsters:** click one and its menu (Attack, Switch, Move, Crest) opens beside it while its targets glow red;
+  click a target to attack, even from the Main step. Or drag it onto the target. Right-click switches position.
+- **Reading cards:** hover a board card for its numbers and every keyword spelled out (hover its badges too); hover a
+  hand card a moment to see it big; press **I** or **Space** (or "Read card") for the full card beside it. Keywords
+  have tooltips everywhere (hand, board, menus, deck and discard lists). Definitions: `client/src/core/keywords.ts`.
+- **The rival's plays** are revealed big over the board with a caption ("Rival casts Spark → Emberhorn destroyed")
+  and beams to whatever they hit; face-down sets and binds stay hidden. Click or any key skips a reveal.
+- **Skipping the rival's turn** (bottom left while it plays): **S**/→ skip this move, **F** fast-forward until you
+  need to decide, **Shift+F**/**End** skip to the end of its turn. Every mode still stops for your Ambush windows, and
+  a toast sums up what it did. "Auto-skip rival turns" and AI speed are saved settings. The client also tells the
+  server to drop the AI's thinking delay (`{ t: "hurry" }`) while you skip.
+- **Log:** the strip in the top bar shows the latest play; click it (or **L**) for the full list; click a line to see
+  its card. **Piles:** your deck (top-left of your Sigil row) lists what's left, never in draw order; discards list
+  their cards. **?** lists every key.
 
 Lanes are plain for now: fields are off by default (`createGame({ fields: true })` turns them back on).
 

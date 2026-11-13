@@ -121,7 +121,7 @@ export type GameEvent =
   | { t: "replace"; p: PlayerId; card: string; lane: number }
   | { t: "position"; p: PlayerId; lane: number; position: Position }
   | { t: "move"; p: PlayerId; from: number; to: number; swap: boolean }
-  | { t: "cast"; p: PlayerId; card: string }
+  | { t: "cast"; p: PlayerId; card: string; target?: { side: PlayerId; lane: number } }
   | { t: "set"; p: PlayerId; lane: number; card?: string }
   | { t: "flip"; p: PlayerId; lane: number; card: string }
   | { t: "crest"; p: PlayerId; crest: CrestId; lane?: number }

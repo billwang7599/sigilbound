@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { WINDOW_MS, type DuelUpdate, type ServerMessage } from "@sigilbound/engine";
-import { Duels } from "../src/core/duels.js";
+import { AI_DELAY, AI_DELAY_HURRIED, Duels } from "../src/core/duels.js";
 import type { Clock } from "../src/core/ports.js";
 import { MemoryDuelStore } from "../src/db/memory.js";
 import { clientMessageSchema } from "../src/ws/schema.js";
@@ -90,4 +90,60 @@ test("client messages are validated", () => {
   assert.ok(!clientMessageSchema.safeParse({ t: "act", duelId: "d1", action: { type: "win" } }).success);
   assert.ok(!clientMessageSchema.safeParse({ t: "act", duelId: "d1", action: { type: "endTurn", lp: 0 } }).success);
   assert.ok(!clientMessageSchema.safeParse({ t: "new", deck: "cheat" }).success);
+});
+
+test("hurry messages are validated: a duel id and how long, nothing else", () => {
+  assert.ok(clientMessageSchema.safeParse({ t: "hurry", duelId: "d1", until: "turn" }).success);
+  assert.ok(clientMessageSchema.safeParse({ t: "hurry", duelId: "d1", until: "decision" }).success);
+  assert.ok(!clientMessageSchema.safeParse({ t: "hurry", duelId: "d1", until: "forever" }).success);
+  assert.ok(!clientMessageSchema.safeParse({ t: "hurry", duelId: "d1", until: "turn", action: { type: "pass" } }).success);
+  assert.ok(!clientMessageSchema.safeParse({ t: "hurry", until: "turn" }).success);
+});
+
+/** Plays the human's side as "end turn" until it's the AI's move in its own Main step. */
+function toAiTurn(t: ReturnType<typeof setup>, id: string) {
+  t.duels.act(id, { type: "mulligan", uids: [] });
+  for (let i = 0; i < 50; i++) {
+    t.clock.advance(AI_DELAY.mulligan);
+    const s = t.last().view.state;
+    if (s.step === "main" && s.active === 1 && t.last().aiThinking) return;
+    if (t.last().legal.some((a) => a.type === "endTurn")) t.duels.act(id, { type: "endTurn" });
+  }
+  assert.fail("never reached the AI's turn");
+}
+
+test("hurry drops the AI's thinking delay for the rest of its turn, and only that turn", () => {
+  const t = setup();
+  const duel = t.duels.start("deepwall");
+  toAiTurn(t, duel.id);
+  const turn = t.last().view.state.turn;
+  const before = t.sent.length;
+  t.duels.hurry(duel.id, "turn");
+  t.clock.advance(AI_DELAY_HURRIED);
+  assert.ok(t.sent.length > before, "the AI moved after the short delay");
+  // Its whole turn goes by quickly, unless the human gets an Ambush window (never auto-passed).
+  for (let i = 0; i < 40 && t.last().view.state.turn === turn && !t.last().legal.length; i++) t.clock.advance(AI_DELAY_HURRIED);
+  const u = t.last();
+  assert.ok(u.view.state.turn !== turn || u.legal.length > 0, "the AI's turn ended or the human has a decision");
+  if (u.legal.some((a) => a.type === "endTurn")) {
+    // The human's turn: back to normal pace for the AI's next turn.
+    t.duels.act(duel.id, { type: "endTurn" });
+    const n = t.sent.length;
+    t.clock.advance(AI_DELAY_HURRIED);
+    assert.equal(t.sent.length, n, "no hurry carried into the next AI turn");
+    t.clock.advance(AI_DELAY.move);
+    assert.ok(t.sent.length > n);
+  }
+  t.duels.dispose();
+});
+
+test("hurry until a decision ends when the human has something to decide", () => {
+  const t = setup();
+  const duel = t.duels.start("deepwall");
+  toAiTurn(t, duel.id);
+  t.duels.hurry(duel.id, "decision");
+  for (let i = 0; i < 60 && !t.last().legal.length; i++) t.clock.advance(AI_DELAY_HURRIED);
+  assert.ok(t.last().legal.length > 0, "the human got a decision");
+  assert.ok(!t.last().view.state.window || t.last().window!.responder === 0);
+  t.duels.dispose();
 });

@@ -14,7 +14,7 @@ export function App() {
     <div className="relative h-full">
       <Title />
       <DeckList />
-      {popup ? <CardPopup popup={popup} where="app" /> : null}
+      {popup ? <CardPopup src={popup.src} where="app" /> : null}
     </div>
   );
 }

@@ -10,12 +10,16 @@ import type { DuelRecord, Ports } from "./ports.js";
 
 /** How long the AI "thinks" before each kind of move, so a human can follow along. */
 export const AI_DELAY = { mulligan: 400, move: 1100, window: 900 };
+/** The AI's delay while the human is skipping its moves (see `hurry`). */
+export const AI_DELAY_HURRIED = 120;
 
 export class DuelError extends Error {}
 
 export class Duels {
   private readonly aiTimers = new Map<string, () => void>();
   private readonly windowTimers = new Map<string, () => void>();
+  /** Duels whose AI is hurried, and until when: the human's next decision, or the end of this turn. */
+  private readonly hurried = new Map<string, { until: "decision" | "turn"; turn: number }>();
 
   constructor(private readonly ports: Ports) {}
 
@@ -52,6 +56,30 @@ export class Duels {
     this.applyFor(duel, duel.human, action);
   }
 
+  /**
+   * The human skips the AI's playback: the AI moves without its thinking delay until the human must decide something
+   * ("decision"), or until its turn ends ("turn"). Only the delay changes; nothing is decided for the human.
+   */
+  hurry(duelId: string, until: "decision" | "turn"): void {
+    const duel = this.ports.store.get(duelId);
+    if (!duel) throw new DuelError("no such duel");
+    this.hurried.set(duelId, { until, turn: duel.state.turn });
+    // Reschedule a pending AI move with the short delay.
+    if (this.aiTimers.has(duelId)) this.scheduleAi(duel);
+  }
+
+  private isHurried(duel: DuelRecord): boolean {
+    const h = this.hurried.get(duel.id);
+    if (!h) return false;
+    const s = duel.state;
+    const humanDecides = actors(s).includes(duel.human);
+    if (s.turn !== h.turn || s.step === "over" || (h.until === "decision" && humanDecides)) {
+      this.hurried.delete(duel.id);
+      return false;
+    }
+    return true;
+  }
+
   private applyFor(duel: DuelRecord, p: PlayerId, action: Action): void {
     const { state, events } = apply(duel.state, p, action);
     duel.state = state;
@@ -83,8 +111,11 @@ export class Duels {
   private scheduleAi(duel: DuelRecord): void {
     this.clearTimer(this.aiTimers, duel.id);
     const s = duel.state;
+    // Checked on every change, so a hurry ends as soon as the human has a decision (or the turn ends).
+    const hurried = this.isHurried(duel);
     if (!actors(s).includes(duel.ai)) return;
-    const delay = s.step === "mulligan" ? AI_DELAY.mulligan : s.window ? AI_DELAY.window : AI_DELAY.move;
+    const delay = hurried ? AI_DELAY_HURRIED
+      : s.step === "mulligan" ? AI_DELAY.mulligan : s.window ? AI_DELAY.window : AI_DELAY.move;
     this.aiTimers.set(duel.id, this.ports.clock.after(delay, () => {
       this.aiTimers.delete(duel.id);
       const cur = this.ports.store.get(duel.id);
