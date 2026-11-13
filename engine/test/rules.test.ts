@@ -197,11 +197,11 @@ test("drawing from an empty deck costs 2 LP", () => {
   assert.equal(st.players[1].lp, 18);
 });
 
-test("the first player can't attack on turn 1, and illegal actions are rejected", () => {
+test("the first player skips their turn-1 draw and attack, and illegal actions are rejected", () => {
   let s = createGame({ seed: 3, decks: [DECKS.ember_rush!, DECKS.deepwall!], first: 0 }).state;
   s = run(s, [0, { type: "mulligan", uids: [] }], [1, { type: "mulligan", uids: [] }]).state;
   assert.equal(s.turn, 1);
-  assert.equal(s.players[0].hand.length, 6);
+  assert.equal(s.players[0].hand.length, 5, "no draw on the first player's first turn");
   assert.equal(s.players[1].hand.length, 6, "the second player's extra card");
   assert.ok(!legalActions(s, 0).some((a) => a.type === "attackStep"));
   assert.throws(() => apply(s, 0, { type: "attackStep" }), IllegalActionError);

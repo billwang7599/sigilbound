@@ -7,7 +7,7 @@
 import { card } from "./cards.js";
 import { apply } from "./engine.js";
 import { legalActions } from "./legal.js";
-import { atkOf, defOf, hasLeap, isGuarding, other, untapped } from "./stats.js";
+import { atkOf, defOf, hasLeap, isGuarding, laneList, other, untapped } from "./stats.js";
 import type { Action, GameState, PlayerId } from "./types.js";
 import type { PlayerView } from "./view.js";
 
@@ -50,6 +50,12 @@ export function scoreAction(s: GameState, me: PlayerId, a: Action, target = sigi
       if (a.type === "bind") sc -= 0.05 * keepValue(s, me, a.uid, target);
       // Prefer pushing the game forward over shuffling when scores tie.
       if (a.type === "move" || a.type === "position") sc -= 0.2;
+      // A lone chip hit into an empty lane made walls (1/4, 0/3) go in attack position, where any attacker kills them.
+      if (a.type === "summon") {
+        const c = card(s.players[me].hand.find((x) => x.uid === a.uid)!.id);
+        const wall = c.def > c.atk + 1 || !!c.guard;
+        if ((a.position === "def") === wall) sc += 1.2;
+      }
       return sc;
     }
   }
@@ -95,7 +101,43 @@ function mulliganPick(s: GameState, me: PlayerId): number[] {
 function handValue(n: number): number {
   return Math.min(n, 5) * 2.5 + Math.max(0, Math.min(n, 7) - 5) * 1;
 }
-const SET_SPELL = 3;
+/** What a hidden face-down spell of the opponent's is worth to them (we can't see it). */
+const HIDDEN_SET = 3;
+
+/**
+ * What one of your own face-down Prepared spells is worth, by what flipping it next turn would do. A flat number made
+ * the AI never set them: with the card leaving the hand, setting looked no better than holding, so they got bound.
+ */
+function setValue(s: GameState, p: PlayerId, lane: number): number {
+  const sp = s.players[p].spells[lane];
+  if (!sp) return 0;
+  const o = other(p);
+  const pl = s.players[p];
+  const across = s.players[o].monsters[lane];
+  switch (sp.id) {
+    case "rockslide":
+      return across ? 1 + 0.8 * monsterValue(s, o, lane) : 2.5;
+    case "undermine":
+      return across ? 2.5 + 0.3 * Math.min(defOf(s, o, lane), 8) : 1.5;
+    case "warcry": {
+      const ready = pl.monsters.filter((m, l) => m && m.position === "atk" && Math.abs(l - lane) <= 1).length;
+      return 1 + 1.6 * ready;
+    }
+    case "second_wind": {
+      const best = Math.max(0, ...pl.discard.map((c) => card(c.id)).filter((c) => c.kind === "monster").map(cardWorth));
+      return best === 0 ? 1 : pl.monsters[lane] ? 1 + 0.25 * best : 1 + 0.6 * best;
+    }
+    case "hidden":
+      return HIDDEN_SET;
+    default:
+      return 3;
+  }
+}
+
+/** Rough worth of a monster card on an empty board. */
+function cardWorth(c: ReturnType<typeof card>): number {
+  return 2 + c.atk + c.def * 0.6 + (c.guard ? 2 : 0) + (c.leap ? 1.5 : 0) + c.cost * 0.3;
+}
 
 /** How many Sigils this deck wants: the highest cost it has seen in its own cards, 3 to 6. */
 export function sigilTarget(s: GameState, me: PlayerId): number {
@@ -111,6 +153,14 @@ function keepValue(s: GameState, me: PlayerId, uid: number, target: number): num
   const def = card(c.id);
   if (def.cost > target) return 0;
   const sig = s.players[me].sigils.length;
+  const o = other(me);
+  // Spells that have nothing to hit right now are the first to bind.
+  if (c.id === "spark") {
+    const hits = s.players[o].monsters.some((m, l) => m && defOf(s, o, l) <= 2);
+    return hits ? 5 : 1.5;
+  }
+  if (def.kind === "ambush") return def.cost <= sig ? 4.5 : 3;
+  if (c.id === "rockslide" || c.id === "insight") return def.cost <= sig + 1 ? 6 : 4;
   if (def.cost <= sig + 1) return 5;
   return 3 - (def.cost - sig) * 0.5;
 }
@@ -140,17 +190,19 @@ export function evaluate(s: GameState, me: PlayerId, target: number, ending: boo
   const o = other(me);
   const mine = s.players[me], theirs = s.players[o];
   let v = lpValue(mine.lp) - lpValue(theirs.lp);
-  for (let l = 0; l < 3; l++) v += monsterValue(s, me, l) - monsterValue(s, o, l);
+  for (const l of laneList(s)) v += monsterValue(s, me, l) - monsterValue(s, o, l);
   v += sigilValue(mine.sigils.length, target) - sigilValue(theirs.sigils.length, 5);
   v += handValue(mine.hand.length) - handValue(theirs.hand.length);
-  v += (mine.spells.filter(Boolean).length - theirs.spells.filter(Boolean).length) * SET_SPELL;
+  for (const l of laneList(s)) v += setValue(s, me, l) - (theirs.spells[l] ? HIDDEN_SET : 0);
 
   const myTurn = s.active === me && !ending;
   if (s.active === me) {
     // Holding up an Ambush through the opponent's turn.
     const free = untapped(s, me);
     if (mine.hand.some((c) => card(c.id).kind === "ambush" && card(c.id).cost <= free)) v += 3;
-    v += myTurn ? 0.9 * pressure(s, me, true) : 0.3 * pressure(s, me, false);
+    // Next turn's threat counts whether or not the turn is ending; leaving it out of mid-turn states made ending the
+    // turn look better than attacking.
+    v += (myTurn ? 0.9 * pressure(s, me, true) : 0) + 0.3 * pressure(s, me, false);
     v -= 0.8 * pressure(s, o, false);
   } else {
     v -= 0.9 * pressure(s, o, true);
@@ -175,7 +227,7 @@ export function pressure(s: GameState, p: PlayerId, now: boolean): number {
     def: defOf(s, o, l) - (now ? 0 : m.defTurn + (p === s.active ? 0 : m.defStone)),
     damage: now ? m.damage : 0, pos: m.position, guard: isGuarding(m), value: monsterValue(s, o, l),
   });
-  const lanes = [0, 1, 2].filter((l) => {
+  const lanes = laneList(s).filter((l) => {
     const m = att[l];
     if (!m || m.position !== "atk") return false;
     return now ? !m.attacked && m.entered !== s.turn : true;
@@ -185,7 +237,7 @@ export function pressure(s: GameState, p: PlayerId, now: boolean): number {
   for (const l of lanes) {
     const m = att[l]!;
     const atk = Math.max(0, atkOf(s, p, l) - (now ? 0 : m.atkTurn));
-    const guards = [0, 1, 2].filter((g) => Math.abs(g - l) <= 1 && defenders[g]?.guard);
+    const guards = laneList(s).filter((g) => Math.abs(g - l) <= 1 && defenders[g]?.guard);
     let tl: number | null;
     if (guards.length) tl = guards.sort((a, b) => remaining(defenders[a]!) - remaining(defenders[b]!))[0]!;
     else if (!defenders[l] || hasLeap(s, l, m)) tl = null;

@@ -8,6 +8,10 @@ export const OPENING_HAND = 5;
 export const EMPTY_DECK_LOSS = 2;
 export const MOVE_COST = 1;
 
+/** Lanes in this duel (3 unless the duel was set up otherwise). */
+export const laneCount = (s: GameState): number => s.players[0].monsters.length;
+export const laneList = (s: GameState): number[] => Array.from({ length: laneCount(s) }, (_, i) => i);
+
 export const other = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 export const adjacent = (a: number, b: number): boolean => Math.abs(a - b) === 1;
 export const field = (s: GameState, lane: number): FieldId | null => s.fields[lane] ?? null;

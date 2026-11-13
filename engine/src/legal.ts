@@ -1,7 +1,7 @@
 /** Every action a player may take right now. The engine validates actions against this list. */
 import { card, CREST_COST } from "./cards.js";
 import {
-  actors, adjacent, ambushKind, atkOf, canAttack, defOf, field, hasLeap, isGuarding, MOVE_COST, other, untapped,
+  actors, adjacent, ambushKind, atkOf, canAttack, defOf, field, hasLeap, isGuarding, laneCount, laneList, MOVE_COST, other, untapped,
 } from "./stats.js";
 import type { Action, AttackTarget, GameState, PlayerId, Position } from "./types.js";
 
@@ -35,7 +35,7 @@ function windowActions(s: GameState, p: PlayerId): Action[] {
 export function attackTargets(s: GameState, p: PlayerId, lane: number): AttackTarget[] {
   const o = other(p);
   const opp = s.players[o].monsters;
-  const guards = [0, 1, 2].filter((g) => Math.abs(g - lane) <= 1 && isGuarding(opp[g] ?? null));
+  const guards = laneList(s).filter((g) => Math.abs(g - lane) <= 1 && isGuarding(opp[g] ?? null));
   if (guards.length) return guards.map((g) => ({ kind: "monster", lane: g }));
   const m = s.players[p].monsters[lane]!;
   if (!opp[lane]) return [{ kind: "direct" }];
@@ -52,7 +52,7 @@ function attackActions(s: GameState, p: PlayerId): Action[] {
 }
 
 export function canMove(s: GameState, p: PlayerId, from: number, to: number, ignoreEntered: boolean): boolean {
-  if (!adjacent(from, to) || to < 0 || to > 2) return false;
+  if (!adjacent(from, to) || to < 0 || to >= laneCount(s)) return false;
   if (field(s, from) === "mountain_pass" || field(s, to) === "mountain_pass") return false;
   const ms = s.players[p].monsters;
   const a = ms[from], b = ms[to];
@@ -64,7 +64,7 @@ export function canMove(s: GameState, p: PlayerId, from: number, to: number, ign
 function moves(s: GameState, p: PlayerId, ignoreEntered: boolean): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = [];
   const ms = s.players[p].monsters;
-  for (let from = 0; from < 3; from++) {
+  for (let from = 0; from < laneCount(s); from++) {
     for (const to of [from - 1, from + 1]) {
       // A swap is listed once, from the lower lane.
       if (ms[to] && to < from) continue;
@@ -79,7 +79,7 @@ function mainActions(s: GameState, p: PlayerId): Action[] {
   const o = other(p);
   const free = untapped(s, p);
   const out: Action[] = [];
-  const oppLanes = [0, 1, 2].filter((l) => s.players[o].monsters[l]);
+  const oppLanes = laneList(s).filter((l) => s.players[o].monsters[l]);
 
   for (const c of pl.hand) {
     const def = card(c.id);
@@ -88,7 +88,7 @@ function mainActions(s: GameState, p: PlayerId): Action[] {
     if (def.cost > free) continue;
     if (def.kind === "monster") {
       const targetSets = c.id === "abyssal_leviathan" ? subsetsUpTo2(oppLanes) : [undefined];
-      for (let lane = 0; lane < 3; lane++) {
+      for (const lane of laneList(s)) {
         for (const position of POSITIONS) {
           for (const targets of targetSets) {
             out.push(targets ? { type: "summon", uid: c.uid, lane, position, targets } :
@@ -99,7 +99,7 @@ function mainActions(s: GameState, p: PlayerId): Action[] {
     } else if (def.kind === "quick") {
       if (c.id === "spark") {
         for (const side of [o, p]) {
-          for (let lane = 0; lane < 3; lane++) {
+          for (const lane of laneList(s)) {
             if (s.players[side].monsters[lane] && defOf(s, side, lane) <= 2) {
               out.push({ type: "cast", uid: c.uid, target: { side, lane } });
             }
@@ -109,7 +109,7 @@ function mainActions(s: GameState, p: PlayerId): Action[] {
         out.push({ type: "cast", uid: c.uid });
       }
     } else if (def.kind === "prepared") {
-      for (let lane = 0; lane < 3; lane++) if (!pl.spells[lane]) out.push({ type: "set", uid: c.uid, lane });
+      for (const lane of laneList(s)) if (!pl.spells[lane]) out.push({ type: "set", uid: c.uid, lane });
     }
   }
 
