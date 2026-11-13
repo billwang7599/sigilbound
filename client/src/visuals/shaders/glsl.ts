@@ -58,9 +58,10 @@ void main(void) {
   vec4 src = texture(uTexture, vTextureCoord);
   vec2 p = floor(vScreen);
   // Height from luminance; normals from its slope (a cheap per-pixel normal map made from the art's shading).
-  float hl = luma(px(vec2(-1., 0.))), hr = luma(px(vec2(1., 0.)));
-  float hu = luma(px(vec2(0., -1.))), hd = luma(px(vec2(0., 1.)));
-  vec3 n = normalize(vec3((hl - hr) * 2.2 * uNormals, (hu - hd) * 2.2 * uNormals, 1.0));
+  // Two pixels apart, so single-pixel dither in the art doesn't turn into lighting noise (that read as grain).
+  float hl = luma(px(vec2(-2., 0.))) + luma(px(vec2(-1., 0.))), hr = luma(px(vec2(2., 0.))) + luma(px(vec2(1., 0.)));
+  float hu = luma(px(vec2(0., -2.))) + luma(px(vec2(0., -1.))), hd = luma(px(vec2(0., 2.))) + luma(px(vec2(0., 1.)));
+  vec3 n = normalize(vec3((hl - hr) * 0.7 * uNormals, (hu - hd) * 0.7 * uNormals, 1.0));
   vec3 L = normalize(vec3(-uSunDir, 0.9));
   float ndl = max(dot(n, L), 0.0);
   // Flat surfaces sit at about 1.0; slopes facing the sun brighten, slopes away darken.
@@ -91,8 +92,8 @@ void main(void) {
     float att = clamp(1.0 - dist / l.z, 0.0, 1.0);
     att *= att;
     float facing = 0.45 + 0.55 * max(dot(n, normalize(vec3(d, 14.0))), 0.0);
-    light += uLightColors[i].rgb * l.w * att * facing;
-    glow += uLightColors[i].rgb * l.w * att * 0.26;
+    light += uLightColors[i].rgb * l.w * att * facing * 0.8;
+    glow += uLightColors[i].rgb * l.w * att * 0.13;
   }
   // Quantise the light to the pixel grid with an ordered dither: banded, crisp, never smeared.
   light = floor(light * 20.0 + bayer4(p)) / 20.0;
@@ -119,7 +120,7 @@ uniform vec2 uSunPos;
 uniform vec3 uSun;
 ${COMMON}
 vec3 at(vec2 o) { return texture(uTexture, vTextureCoord + o * uInputSize.zw).rgb; }
-vec3 bright(vec2 o) { vec3 c = at(o); float l = luma(c); return c * smoothstep(0.66, 0.95, l); }
+vec3 bright(vec2 o) { vec3 c = at(o); float l = luma(c); return c * smoothstep(0.8, 1.0, l); }
 vec3 tonemap(vec3 x) {
   // A soft filmic shoulder that keeps mid-tones where the art put them.
   vec3 a = x * (1.0 + x / 6.0) / (1.0 + x * 0.85);
@@ -135,8 +136,8 @@ void main(void) {
   // Only in the outer rim, and only half-blended, so it reads as lens depth rather than a misprint.
   if (uHigh > 0.5 && edge > 0.5) {
     vec2 dir = sign(fromC) * step(0.3, abs(fromC));
-    col.r = mix(col.r, at(dir).r, 0.45);
-    col.b = mix(col.b, at(-dir).b, 0.45);
+    col.r = mix(col.r, at(dir).r, 0.3);
+    col.b = mix(col.b, at(-dir).b, 0.3);
   }
   if (uHigh > 0.5) {
     // Bloom: a 24-tap disc of thresholded brightness, added softly on top of the art.
@@ -146,7 +147,7 @@ void main(void) {
       float r = 1.5 + float(i) * 0.42;
       b += bright(vec2(cos(a), sin(a)) * r) * (1.0 - float(i) / 26.0);
     }
-    col += b / 6.5;
+    col += b / 10.0;
     // God rays: soft beams fanning from the sun corner, with haze that thickens near it.
     vec2 toP = p - uSunPos;
     float ang = atan(toP.y, toP.x);
@@ -154,7 +155,7 @@ void main(void) {
     float beams = 0.5 + 0.5 * sin(ang * 23.0 + sin(ang * 7.0 + uTime * 0.05) * 2.0);
     beams *= 0.5 + 0.5 * sin(ang * 11.0 - uTime * 0.08);
     float fall = exp(-dist / 230.0);
-    col += uSun * (beams * 0.16 + 0.06) * fall;
+    col += uSun * (beams * 0.09 + 0.025) * fall;
     // Dust motes: one pixel each, drifting through the light.
     vec2 cell = floor(p / 18.0);
     float h = hash(cell);
@@ -172,9 +173,11 @@ void main(void) {
   float l = luma(col);
   col += mix(vec3(-0.01, 0.0, 0.025), vec3(0.03, 0.012, -0.02), smoothstep(0.15, 0.75, l));
   col = mix(vec3(luma(col)), col, 1.08);
+  // A gentle S-curve so the light passes never flatten contrast (numbers and silhouettes stay readable).
+  col = mix(col, col * col * (3.0 - 2.0 * col), 0.22);
   // Vignette, dithered so its edge is a pixel pattern rather than a blur.
   float v = smoothstep(0.42, 0.78, edge);
-  col *= 1.0 - 0.38 * step(bayer4(p), v * 1.2) * v - 0.12 * v;
+  col *= 1.0 - 0.26 * step(bayer4(p), v * 1.2) * v - 0.08 * v;
   finalColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
 `;

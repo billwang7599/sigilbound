@@ -25,13 +25,13 @@ export function AmbushPrompt() {
   if (!w) return null;
   const left = Math.max(0, endsAt - now);
   if (w.responder !== me) {
-    return <div className="absolute top-3 left-1/2 -translate-x-1/2 panel px-4 py-2 font-pixel text-[11px] pointer-events-none z-20">Rival may respond…</div>;
+    return <div className="absolute top-[calc(var(--top-h)+8px)] inset-x-0 flex justify-center pointer-events-none z-20"><div className="u-t panel px-4 py-2 font-pixel text-[11px]">Rival may respond…</div></div>;
   }
   const ambushes = update.legal.filter((a) => a.type === "ambush");
   const what = w.kind === "attack" ? `Rival attacks ${w.target.kind === "direct" ? "you directly" : "your monster"}!` : "Your monster was destroyed in battle!";
   return (
     <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none z-30">
-      <div className="panel p-3 flex flex-col gap-2 pointer-events-auto min-w-[360px] pop-in">
+      <div className="u-t pointer-events-auto"><div className="panel p-3 flex flex-col gap-2 min-w-[360px] pop-in">
         <div className="font-pixel text-[13px] text-gold">Ambush window</div>
         <div>{what}</div>
         <div className="h-3 bg-ink" style={{ boxShadow: "inset 0 0 0 1px #000" }}>
@@ -51,7 +51,7 @@ export function AmbushPrompt() {
           <div className="flex-1" />
           <button className="btn" onClick={() => actions.act({ type: "pass" })}>Pass (P)</button>
         </div>
-      </div>
+      </div></div>
     </div>
   );
 }
@@ -64,7 +64,7 @@ export function GameOver() {
   const won = s.winner === update.view.you;
   return (
     <div className="absolute inset-0 bg-ink/70 flex items-center justify-center z-50 pop-in">
-      <div className="panel p-6 flex flex-col items-center gap-3">
+      <div className="u-c panel p-6 flex flex-col items-center gap-3">
         <div className={`font-pixel text-[28px] ${won ? "text-gold" : "text-hp"}`}>{won ? "Victory!" : "Defeat"}</div>
         <div>{s.endReason === "concede" ? (won ? "The rival conceded." : "You conceded.") : `After ${s.turn} turns.`}</div>
         <div className="flex gap-2">
@@ -87,11 +87,12 @@ export function Mulligan() {
   const s = update.view.state, me = update.view.you;
   if (s.step !== "mulligan") return null;
   if (s.players[me].mulliganDone) {
-    return <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 panel px-4 py-2 font-pixel text-[12px] z-30">Waiting for the rival's mulligan…</div>;
+    return <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"><div className="u-c panel px-4 py-2 font-pixel text-[12px]">Waiting for the rival's mulligan…</div></div>;
   }
   const hand = s.players[me].hand;
   return (
-    <div className="absolute inset-0 bg-ink/70 flex flex-col items-center justify-center gap-4 z-30">
+    <div className="absolute inset-0 bg-ink/70 flex items-center justify-center z-30">
+    <div className="u-c flex flex-col items-center gap-4">
       <div className="font-pixel text-[18px] text-gold">Opening hand</div>
       <div className="text-[18px] opacity-85">Pick cards to send back and draw again (1–9 or Space toggles). Click a card to read it.</div>
       <div className="flex gap-3">
@@ -113,6 +114,7 @@ export function Mulligan() {
         {mulligan.length ? `Mulligan ${mulligan.length}` : "Keep hand"} (Enter)
       </button>
     </div>
+    </div>
   );
 }
 
@@ -133,7 +135,7 @@ export function AskPosition() {
         onPointerDown={(e) => e.stopPropagation()}
       >
       {/* pop-in animates transform, so it lives on an inner box: on the outer one it would undo the centring. */}
-      <div className="flex flex-col items-center gap-1 pop-in">
+      <div className="u-c"><div className="flex flex-col items-center gap-1 pop-in">
         <div className="font-pixel text-[10px] bg-ink px-2 py-1">{id ? card(id).name : ""}: position?</div>
         <div className="flex gap-2">
           {(["atk", "def"] as const).map((p) => (
@@ -144,7 +146,7 @@ export function AskPosition() {
           ))}
         </div>
         <div className="text-[14px] bg-ink/80 px-2">Enter confirms · Esc cancels</div>
-      </div>
+      </div></div>
       </div>
     </div>
   );
@@ -156,7 +158,7 @@ export function DragGhost() {
   const drag = useStore(ui.duel, (d) => d.drag);
   if (!drag) return null;
   return (
-    <div className="fixed z-50 pointer-events-none" style={{ left: drag.x - 50, top: drag.y - 70, transform: `rotate(${drag.over ? 0 : -6}deg) scale(${drag.over ? 0.85 : 1})`, opacity: 0.92, transition: "transform 80ms steps(2)" }}>
+    <div className="fixed z-50 pointer-events-none" style={{ left: drag.x - 50, top: drag.y - 70, transformOrigin: "50px 70px", transform: `rotate(${drag.over ? 0 : -6}deg) scale(calc(var(--u) * ${drag.over ? 0.85 : 1}))`, opacity: 0.92, transition: "transform 80ms steps(2)" }}>
       <CardFace id={drag.id} />
     </div>
   );
@@ -170,7 +172,7 @@ export function Banner() {
   const color = banner.tone === "me" ? "bg-gold text-ink" : banner.tone === "opp" ? "bg-plum text-paper" : "bg-hp text-paper";
   return (
     <div key={banner.id} className="absolute inset-x-0 top-[40%] z-30 pointer-events-none overflow-hidden banner-wrap">
-      <div className={`banner font-pixel text-[30px] py-3 text-center ${color}`} style={{ textShadow: "3px 3px 0 #14121c" }}>
+      <div className={`banner font-pixel text-[calc(30px*var(--u))] py-[calc(12px*var(--u))] text-center ${color}`} style={{ textShadow: "3px 3px 0 #14121c" }}>
         {banner.text}
       </div>
     </div>
@@ -183,14 +185,14 @@ export function ConfirmEnd() {
   if (n === null) return null;
   return (
     <div className="absolute inset-0 bg-ink/50 flex items-center justify-center z-50" onPointerDown={() => actions.cancelEnd()}>
-      <div className="panel p-4 flex flex-col gap-3 pop-in" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="u-c"><div className="panel p-4 flex flex-col gap-3 pop-in" onPointerDown={(e) => e.stopPropagation()}>
         <div className="font-pixel text-[13px] text-gold">End your turn?</div>
         <div>You still have {n} thing{n === 1 ? "" : "s"} you could play or attack with.</div>
         <div className="flex gap-2 justify-end">
           <button className="btn" onClick={() => actions.cancelEnd()}>Keep playing (Esc)</button>
           <button className="btn btn-gold" onClick={() => actions.endTurn(true)}>End turn (Enter)</button>
         </div>
-      </div>
+      </div></div>
     </div>
   );
 }
@@ -224,7 +226,7 @@ export function Help() {
   if (!open) return null;
   return (
     <div className="absolute inset-0 bg-ink/60 flex items-center justify-center z-50" onPointerDown={() => actions.toggle("help")}>
-      <div className="panel p-4 flex flex-col gap-2 pop-in max-w-[640px] max-h-[92vh] overflow-y-auto" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="u-c panel p-4 flex flex-col gap-2 max-w-[640px] max-h-[calc(92vh/var(--u))] overflow-y-auto" onPointerDown={(e) => e.stopPropagation()}>
         <div className="font-pixel text-[13px] text-gold">Controls</div>
         <div className="text-[17px] opacity-85">Mouse: click a card to select it; its choices open beside it and the places it can go glow on the board, so click one. Or drag the card straight there (your Sigil row binds it). Click your monster, then a red enemy, to attack. Right-click your monster to switch position. Hover a card for its keywords; hover longer in your hand to see it big.</div>
         <table className="text-[17px]">
@@ -250,7 +252,7 @@ function grouped(ids: string[]): { id: string; n: number }[] {
 
 function CardGrid({ entries, onPick }: { entries: { id: string; n?: number; key: string }[]; onPick: (id: string) => void }) {
   return (
-    <div className="grid grid-cols-6 gap-2 overflow-y-auto max-h-[60vh] p-1">
+    <div className="grid grid-cols-6 gap-2 overflow-y-auto max-h-[calc(60vh/var(--u))] p-1">
       {entries.map((e) => (
         <button key={e.key} className="relative hover:-translate-y-1 transition-transform" onClick={() => onPick(e.id)}>
           <CardFace id={e.id} />
@@ -284,7 +286,7 @@ export function PileViewer() {
   }
   return (
     <div className="absolute inset-0 bg-ink/70 flex items-center justify-center z-40" onPointerDown={() => actions.closePile()}>
-      <div className="panel p-4 flex flex-col gap-2 max-w-[760px] pop-in" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="u-c panel p-4 flex flex-col gap-2 max-w-[760px]" onPointerDown={(e) => e.stopPropagation()}>
         <div className="flex items-baseline gap-3">
           <div className="font-pixel text-[13px] text-gold">{title}</div>
           <div className="flex-1" />
@@ -306,7 +308,7 @@ export function DeckList() {
   const ids = Object.entries(d.cards).flatMap(([id, n]) => Array.from({ length: n }, () => id));
   return (
     <div className="absolute inset-0 bg-ink/70 flex items-center justify-center z-40" onPointerDown={() => actions.showDeckList(null)}>
-      <div className="panel p-4 flex flex-col gap-2 max-w-[760px] pop-in" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="u-c panel p-4 flex flex-col gap-2 max-w-[760px]" onPointerDown={(e) => e.stopPropagation()}>
         <div className="flex items-baseline gap-3">
           <div className="font-pixel text-[13px] text-gold">{d.name}: {ids.length} cards</div>
           <div className="text-[15px] opacity-75">Crest: {CRESTS[d.crest].name} ({CRESTS[d.crest].text})</div>
@@ -323,5 +325,5 @@ export function ErrorToast() {
   const { ui } = useGame();
   const error = useStore(ui.app, (a) => a.error);
   if (!error) return null;
-  return <div className="absolute top-14 left-1/2 -translate-x-1/2 panel px-4 py-2 text-hp z-50">{error}</div>;
+  return <div className="absolute top-14 inset-x-0 flex justify-center z-50 pointer-events-none"><div className="u-t panel px-4 py-2 text-hp">{error}</div></div>;
 }

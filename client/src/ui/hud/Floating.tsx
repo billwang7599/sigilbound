@@ -1,6 +1,7 @@
 /** HUD boxes that sit next to the thing they're about (a hand card, a board slot), kept on screen. */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { UiActions, PopupSrc } from "../state.js";
+import { uiScale } from "../layout.js";
 
 /** Where a card is on screen right now. */
 export function anchorOf(src: PopupSrc, actions: UiActions): DOMRect | null {
@@ -10,7 +11,8 @@ export function anchorOf(src: PopupSrc, actions: UiActions): DOMRect | null {
       const el = document.querySelector(`[data-hand-uid="${src.uid}"]`);
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return new DOMRect(r.left, r.bottom - 140 - 46, r.width, 140);
+      const u = uiScale();
+      return new DOMRect(r.left, r.bottom - (140 + 46) * u, r.width, 140 * u);
     }
     case "monster": return actions.boardRect(`me:monster:${src.lane}`);
     case "enemy": return actions.boardRect(`opp:monster:${src.lane}`);
@@ -51,7 +53,7 @@ export function Floating(props: {
     const el = ref.current;
     if (!el) return;
     const w = el.offsetWidth, h = el.offsetHeight;
-    const scale = Math.min(1, (H - 16) / h, (W - 16) / w);
+    const scale = Math.min(uiScale(), (H - 16) / h, (W - 16) / w);
     const sw = w * scale, sh = h * scale;
     let left: number, top: number;
     if (!anchor) { left = (W - sw) / 2; top = (H - sh) / 2; }
@@ -76,7 +78,7 @@ export function Floating(props: {
       className={`fixed ${props.className ?? ""}`}
       style={{
         left: box?.left ?? -9999, top: box?.top ?? -9999, zIndex: props.z ?? 35,
-        transform: box && box.scale < 1 ? `scale(${box.scale})` : undefined, transformOrigin: "top left",
+        transform: box && box.scale !== 1 ? `scale(${box.scale})` : undefined, transformOrigin: "top left",
         pointerEvents: interactive ? "auto" : "none", visibility: box ? "visible" : "hidden",
       }}
       onPointerDown={props.onPointerDown}

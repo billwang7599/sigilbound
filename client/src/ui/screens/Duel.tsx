@@ -22,7 +22,7 @@ export function Duel() {
   const boardRef = useCallback((el: HTMLDivElement | null) => actions.attachBoard(el), [actions]);
   return (
     <div className="relative h-full overflow-clip bg-night">
-      <div ref={boardRef} className="absolute inset-x-0 top-[40px] bottom-[150px] flex items-center justify-center" />
+      <div ref={boardRef} className="absolute inset-x-0 top-[var(--top-h)] bottom-[var(--hand-h)] flex items-center justify-center" />
       <TopBar />
       <TurnDock />
       <Hand />

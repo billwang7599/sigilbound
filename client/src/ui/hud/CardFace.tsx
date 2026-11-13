@@ -5,6 +5,7 @@ import { KEYWORDS, splitKeywords } from "../../core/keywords.js";
 import { CARD_LAYOUT, frameColors, type R } from "../../gfx/frames.js";
 import { artCanvas, badgeCanvas, cardBackCanvas, cardBackOf, cardCanvas, dataUrl } from "../../gfx/sprites.js";
 import { CardFx } from "./CardFx.js";
+import { uiScale } from "../layout.js";
 
 const KIND_LABEL: Record<string, string> = {
   monster: "Monster", quick: "Quick spell", prepared: "Prepared spell", ambush: "Ambush", hidden: "",
@@ -40,15 +41,16 @@ export function Kw({ k, children, className = "kw", tip }: {
 }
 
 function KwTip({ name, text, at }: { name: string; text: string; at: DOMRect }) {
-  const W = 250;
+  const u = uiScale();
+  const W = 250 * u;
   const left = Math.max(6, Math.min(window.innerWidth - W - 6, at.left + at.width / 2 - W / 2));
-  const above = at.top > 140;
+  const above = at.top > 140 * u;
   const style: React.CSSProperties = above
     ? { left, bottom: window.innerHeight - at.top + 6, width: W }
     : { left, top: at.bottom + 6, width: W };
   return createPortal(
-    <span className="kw-tip" role="tooltip" style={style}>
-      <span className="font-pixel text-[10px] text-gold block mb-0.5">{name}</span>
+    <span className="kw-tip" role="tooltip" style={{ ...style, fontSize: 17 * u, padding: `${10 * u}px ${12 * u}px` }}>
+      <span className="font-pixel text-gold block mb-0.5" style={{ fontSize: 10 * u }}>{name}</span>
       {text}
     </span>,
     document.body,

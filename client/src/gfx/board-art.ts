@@ -134,3 +134,44 @@ export function boardBackgroundCanvas(g: BoardGeometry): HTMLCanvasElement {
   }
   return p.c;
 }
+
+/**
+ * The title screen's backdrop (320×180, scaled up in CSS): a banded night sky with stars, a large faint sigil
+ * diamond, layered hills, and the edge of the duel table along the bottom.
+ */
+export function titleBackdropCanvas(): HTMLCanvasElement {
+  const W = 320, H = 180;
+  const p = new Px(W, H);
+  const rand = seeded(11);
+  const bands = [PAL.ink, PAL.night, PAL.dusk, PAL.plum];
+  for (let y = 0; y < H; y++) {
+    const t = Math.min(1, y / 120) * (bands.length - 1);
+    const i = Math.floor(t), f = t - i;
+    for (let x = 0; x < W; x++) p.px(x, y, bayer(x, y) < f ? bands[Math.min(bands.length - 1, i + 1)]! : bands[i]!);
+  }
+  for (let i = 0; i < 70; i++) {
+    const x = Math.floor(rand() * W), y = Math.floor(rand() * 90);
+    p.px(x, y, rand() < 0.2 ? PAL.gold4 : rand() < 0.5 ? PAL.lilac : PAL.mauve);
+    if (rand() < 0.08) p.px(x - 1, y, PAL.mauve).px(x + 1, y, PAL.mauve).px(x, y - 1, PAL.mauve).px(x, y + 1, PAL.mauve).px(x, y, PAL.white);
+  }
+  // A great faint sigil: a diamond outline with an inner diamond, centred behind the logo.
+  const cx = W / 2, cy = 58;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const d = Math.abs(x - cx) + Math.abs(y - cy);
+    if ((d >= 52 && d < 54) || (d >= 40 && d < 41 && bayer(x, y) < 0.6)) p.px(x, y, PAL.plum);
+  }
+  // Hills, far to near.
+  const hill = (base: number, amp: number, freq: number, col: string, seed: number) => {
+    for (let x = 0; x < W; x++) {
+      const top = Math.round(base - amp * (0.5 + 0.5 * Math.sin(x * freq + seed)) - amp * 0.4 * Math.sin(x * freq * 2.7 + seed * 3));
+      p.rect(x, top, 1, H - top, col);
+    }
+  };
+  hill(132, 12, 0.031, PAL.dusk, 1);
+  hill(142, 9, 0.047, PAL.night, 4);
+  // The table edge: planks with a lit lip.
+  p.rect(0, 150, W, 30, PAL.wood1);
+  p.rect(0, 150, W, 1, PAL.wood4).rect(0, 151, W, 2, PAL.wood3).rect(0, 162, W, 1, PAL.wood0).rect(0, 170, W, 1, PAL.wood0);
+  for (let i = 0; i < 30; i++) p.rect(Math.floor(rand() * W), 154 + Math.floor(rand() * 24), 3 + Math.floor(rand() * 10), 1, PAL.wood0);
+  return p.c;
+}

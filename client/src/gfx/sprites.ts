@@ -8,7 +8,7 @@ import { card, type FieldId } from "@sigilbound/engine";
 import { MONSTER_ART, PNG_ART, SPELL_ART } from "./art.js";
 import { bayer, cardFaceCanvas, Px, type CardSize } from "./frames.js";
 import { FIELD_TILES, PAL, UI } from "./palette.js";
-import { render } from "./sculpt.js";
+import { POSES, posed, render } from "./sculpt.js";
 
 /** Monster art size on the board (one board pixel per art pixel). */
 export const MONSTER_PX = 48;
@@ -46,6 +46,25 @@ function pngArt(id: string, size: number): HTMLCanvasElement | null {
   img.onload = () => ctx.drawImage(img, 0, 0, size, size);
   img.src = url;
   return c;
+}
+
+/** One animation pose of a monster (see POSES in sculpt.ts), at board size. Hand-drawn PNGs have one pose. */
+export function monsterPose(id: string, pose: keyof typeof POSES | string): HTMLCanvasElement {
+  if (pose === "idle0" || PNG_ART[id] || !MONSTER_ART[id]) return monsterCanvas(id);
+  return cached(`m:${id}:${pose}`, () => render(posed(MONSTER_ART[id]!, POSES[pose] ?? {}), MONSTER_PX));
+}
+
+/** A monster's silhouette in one flat colour (hit flashes, the white frame before it shatters). */
+export function monsterFlash(id: string, color = "#ffffff"): HTMLCanvasElement {
+  return cached(`mf:${id}:${color}`, () => {
+    const src = monsterCanvas(id);
+    const [c, ctx] = canvas(src.width, src.height);
+    ctx.drawImage(src, 0, 0);
+    ctx.globalCompositeOperation = "source-in";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, c.width, c.height);
+    return c;
+  });
 }
 
 /** A monster at `size`×`size` (48 on the board). */
@@ -191,8 +210,33 @@ export function badgeCanvas(kind: keyof typeof BADGES): HTMLCanvasElement {
   return cached(`b:${kind}`, () => fromRows(BADGES[kind]!.rows, BADGES[kind]!.colors));
 }
 
+const urls = new WeakMap<HTMLCanvasElement, string>();
+/** A canvas as an <img> URL, encoded once per canvas (the HUD asks for the same card faces over and over). */
 export function dataUrl(c: HTMLCanvasElement): string {
-  return c.toDataURL();
+  let u = urls.get(c);
+  if (!u) { u = c.toDataURL(); urls.set(c, u); }
+  return u;
+}
+
+/**
+ * Build every card's faces and poses ahead of time, a few per idle slice, so the first time a card shows up
+ * (dealt, hovered, played) nothing has to be drawn on the spot.
+ */
+export function warmArt(ids: string[]): void {
+  const jobs: (() => void)[] = [];
+  for (const id of ids) {
+    const kind = card(id).kind;
+    jobs.push(() => { dataUrl(cardCanvas(id, "hand")); cardCanvas(id, "board"); });
+    jobs.push(() => { dataUrl(cardCanvas(id, "big")); });
+    if (kind === "monster") jobs.push(() => { for (const p of ["idle1", "idle2", "idle3", "attack", "hit"]) monsterPose(id, p); monsterFlash(id); });
+  }
+  const ric = (window as unknown as { requestIdleCallback?: (f: (d: { timeRemaining(): number }) => void) => void }).requestIdleCallback;
+  const step = (d?: { timeRemaining(): number }) => {
+    const until = performance.now() + 8;
+    while (jobs.length && (d ? d.timeRemaining() > 2 : performance.now() < until)) jobs.shift()!();
+    if (jobs.length) (ric ? ric(step) : setTimeout(step, 16));
+  };
+  (ric ? ric(step) : setTimeout(step, 16));
 }
 
 /** A Sigil: a small face-down card with a glowing gem, 12×16. */
