@@ -14,6 +14,11 @@ Open http://localhost:5173, pick a deck, and play the AI (it plays the other dec
 - `npm test`: engine rules tests, server duel tests, and 100 AI-vs-AI games (prints average length)
 - `npm run typecheck`: all workspaces plus the server layer check
 - `npm run sim -- 200`: more AI-vs-AI games with a win/length summary
+- `npm run balance -- 500 [lanes]`: every deck matchup with fixed seeds: game length, win rates, first-player wins,
+  spells per game, Guard use and stalls
+- `npx tsx engine/scripts/experiment.ts 300 3 '{"cards":{"pebblekin":{"def":4}}}'`: the same report with card or deck
+  tweaks patched in memory, for trying balance ideas without editing card data
+- `npx tsx engine/scripts/diag.ts 500`: per-spell held / used / bound-as-Sigil counts
 
 ## Layout
 

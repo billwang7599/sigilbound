@@ -6,7 +6,7 @@ import { card, CENTER_POOL, CREST_COST, deckList, type DeckDef } from "./cards.j
 import { legalActions, sameAction } from "./legal.js";
 import { randInt, shuffle } from "./rng.js";
 import {
-  actors, atkOf, defOf, EMPTY_DECK_LOSS, HAND_LIMIT, MOVE_COST, OPENING_HAND, other, START_LP, windowOpens,
+  actors, atkOf, defOf, EMPTY_DECK_LOSS, laneCount, HAND_LIMIT, MOVE_COST, OPENING_HAND, other, START_LP, windowOpens,
 } from "./stats.js";
 import {
   IllegalActionError, type Action, type ApplyResult, type AttackTarget, type GameEvent, type GameState, type Monster,
@@ -27,9 +27,13 @@ export interface NewGame {
   first?: PlayerId;
   /** Lane fields (homes and a random center place). Off by default: every lane is plain. */
   fields?: boolean;
+  /** Lanes per side. 3 is the standard game; other counts are for experiments and campaign bosses. */
+  lanes?: number;
 }
 
 export function createGame(opts: NewGame): ApplyResult {
+  const lanes = opts.lanes ?? 3;
+  if (!Number.isInteger(lanes) || lanes < 1 || lanes > 5) throw new Error(`bad lane count ${lanes}`);
   const s = { rng: opts.seed >>> 0, nextUid: 1 };
   const first: PlayerId = opts.first ?? (randInt(s, 2) as PlayerId);
   const center = opts.fields ? CENTER_POOL[randInt(s, CENTER_POOL.length)]! : null;
@@ -40,14 +44,15 @@ export function createGame(opts: NewGame): ApplyResult {
       lp: START_LP,
       deck: ids.map((id) => ({ uid: s.nextUid++, id })),
       hand: [], discard: [], sigils: [],
-      monsters: [null, null, null], spells: [null, null, null],
+      monsters: Array.from({ length: lanes }, () => null), spells: Array.from({ length: lanes }, () => null),
       crest: deck.crest, home: deck.home, deckName: deck.name,
       bound: false, crestUsed: false, moved: false, ambushUsed: false, mulliganDone: false,
     };
   }) as [PlayerState, PlayerState];
   const state: GameState = {
     v: 1, rng: s.rng, nextUid: s.nextUid, turn: 0, active: first, first, step: "mulligan", players,
-    fields: opts.fields ? [opts.decks[first].home, center, opts.decks[other(first)].home] : [null, null, null],
+    fields: Array.from({ length: lanes }, (_, l) => !opts.fields ? null :
+      l === 0 ? opts.decks[first].home : l === lanes - 1 ? opts.decks[other(first)].home : center),
     window: null, windowSeq: 0, winner: null, endReason: null,
   };
   const events: Events = [{ t: "start", first, fields: [...state.fields] }];
@@ -107,7 +112,9 @@ function startTurn(s: GameState, p: PlayerId, events: Events): void {
   for (const sg of pl.sigils) sg.tapped = false;
   for (const m of pl.monsters) if (m) m.defStone = 0;
   events.push({ t: "turn", p, turn: s.turn });
-  draw(s, p, events, false);
+  // The first player skips their turn-1 draw (RULES.md v0.7, section 4). Skipping their first attack alone did
+  // nothing, since no monster can attack the turn it enters.
+  if (s.turn > 1) draw(s, p, events, false);
   s.fields.forEach((f, lane) => {
     if (f === "old_forest" && pl.monsters[lane]) changeLp(s, p, 1, "Old Forest", events);
   });
@@ -340,7 +347,7 @@ function bounce(s: GameState, p: PlayerId, lane: number, events: Events): void {
 /** Anything whose DEF is at or below its damage is destroyed. Turn player first, lanes left to right. */
 function checkDeaths(s: GameState, events: Events): void {
   for (const p of [s.active, other(s.active)]) {
-    for (let lane = 0; lane < 3; lane++) {
+    for (let lane = 0; lane < laneCount(s); lane++) {
       const m = s.players[p].monsters[lane];
       if (m && defOf(s, p, lane) <= m.damage) destroy(s, p, lane, "effect", events);
     }
@@ -362,7 +369,7 @@ function onPlay(s: GameState, p: PlayerId, lane: number, id: string, targets: nu
       bounce(s, o, lane, events);
       return;
     case "elder_treant":
-      for (let l = 0; l < 3; l++) if (opp.monsters[l] && defOf(s, o, l) <= 2) destroy(s, o, l, "effect", events);
+      for (let l = 0; l < laneCount(s); l++) if (opp.monsters[l] && defOf(s, o, l) <= 2) destroy(s, o, l, "effect", events);
       return;
     case "abyssal_leviathan":
       for (const l of targets) bounce(s, o, l, events);

@@ -11,7 +11,8 @@
     "dev": "concurrently -k -n server,client -c yellow,cyan \"npm run dev -w @sigilbound/server\" \"npm run dev -w @sigilbound/client\"",
     "typecheck": "tsc -p engine && tsc -p engine/test && tsc -p server && tsc -p server/test && tsc -p client && tsc -p client/test && npm run check:layers --silent -w @sigilbound/server",
     "test": "tsx --test 'engine/test/**/*.test.ts' 'server/test/**/*.test.ts' 'client/test/**/*.test.ts'",
-    "sim": "tsx engine/scripts/sim.ts"
+    "sim": "tsx engine/scripts/sim.ts",
+    "balance": "tsx engine/scripts/balance.ts"
   },
   "devDependencies": {
     "typescript": "~5.9.0",

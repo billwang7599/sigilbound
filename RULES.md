@@ -1,9 +1,16 @@
-# Sigilbound Rules — draft v0.6 (paper prototype)
+# Sigilbound Rules — draft v0.7 (paper prototype)
 
 All numbers are starting guesses to test on paper. Names in the sample cards are placeholders until the theme is set.
 Everything here must be playable at a real table with cards, one life tracker per player, and a few small dice.
 
-**Changes from v0.5:**
+**Changes from v0.6:**
+- **The first player skips their draw on turn 1** (section 4). Skipping their first attack did nothing on its own,
+  since no monster can attack the turn it enters. In 500 AI-vs-AI mirror games the first player won 64%; with the
+  skipped draw it's 46–52%.
+- No card changes. AI-vs-AI sims still have Ember Rush beating Deepwall about 9 games in 10; see section 15 for the
+  numbers and the options.
+
+**Changes from v0.5 to v0.6:**
 - New section 12, **Game phases and deck types:** your Sigil count is the clock (early 1–3, mid 4–5, late 6+), and
   decks lean toward one phase: Aggro, Midrange or Control.
 - Two new first-set keywords: **Awaken N** (bonus if you have N+ Sigils when you play it) and **Rush** (+2 ATK while
@@ -81,7 +88,7 @@ You         [spell][mon]  [spell][mon]  [spell][mon]     Your Sigil row
 2. Each player shuffles and draws **5 cards**.
 3. **Mulligan, once:** put any number of cards from your hand on the bottom of your deck, draw that many, then shuffle.
 4. The second player draws **1 extra card** to make up for going second.
-5. **The first player skips their attack step on turn 1.**
+5. **The first player skips their draw and their attack step on turn 1.**
 
 ## 5. Sigils (resources)
 
@@ -422,6 +429,27 @@ Colossus** (Second Wind can bring one back).
   removal and Ambush stronger so control can beat it.
 - **Rush and Awaken:** does Rush make stopping at 3 Sigils feel like a real plan? Is Awaken worth holding a card for?
 - **Elder Treant:** wiping every DEF 2 or less may hit aggro too hard. Try DEF 1 or less if so.
+
+### Sim results (AI vs AI, 500 games per matchup, v0.7)
+
+`npm run balance` reruns these. The AI is a one-move-ahead greedy player, so it plays aggro better than control;
+read these numbers as a floor for Deepwall, not a verdict.
+
+| Matchup | Avg / median turns | Games in 8–12 | Win rate | First player wins | Stalls |
+|---|---|---|---|---|---|
+| Ember Rush vs Deepwall | 13.6 / 13 | 46% | Ember 94% | 52% | 4% |
+| Ember Rush mirror | 13.1 / 13 | 42% | — | 46% | 0% |
+| Deepwall mirror | 29.8 / 31 | 0% | — | 52% | 53% |
+
+- **Ember vs Deepwall is lopsided, and small card changes don't fix it.** Tried in sims (300–500 games each): Rush
+  off entirely (Ember 90%), sturdier walls Pebblekin 0/4, Ripplefin 1/5, Mudling 1/5 (91%), Firebolt 2 (93%), Stone
+  Crest +4 DEF (96%), LP 25 (90%), LP 25 + walls + 2 Smoke (84%, but games average 17 turns). Deepwall loses because
+  it averages about 1.3 monsters on board through turns 5–12 against Ember's 2.3, and three quarters of its lost LP is
+  direct hits into empty lanes. Attacking a defense-position monster is free, so walls only slow attackers down.
+- **Deepwall mirror drags to deck-out** (about 30 turns). Its finishers don't close games.
+- **Lanes: keep 3.** With 4 lanes, Ember beats Deepwall 97% (vs 94%), games are under 1 turn shorter (12.7), and
+  Guard covers less of the board (a Guard reaches 3 of 4 lanes instead of all 3). A fourth lane gives aggro another
+  empty lane to hit.
 
 ## 16. Rules that sit outside this page
 
