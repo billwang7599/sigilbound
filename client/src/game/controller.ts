@@ -235,6 +235,7 @@ export class Controller implements UiActions {
     const n = ++revealId;
     const base = { n, id, caption: playCaption(play, u.view.state, me), from: "hand:opp", to: playDestination(play.event, me) };
     this.ui.duel.set({ reveal: { ...base, phase: "in" } });
+    board.revealLight(id);
     await board.wait(280);
     const targets = playTargets(play, me);
     const clear = targets.length ? board.beam(targets) : null;

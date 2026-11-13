@@ -1,3 +1,4 @@
+import { GraphicsToggle } from "../hud/GraphicsToggle.js";
 import { DECKS, CRESTS, type DeckChoice } from "@sigilbound/engine";
 import { useMemo } from "react";
 import { dataUrl, monsterCanvas } from "../../gfx/sprites.js";
@@ -42,6 +43,7 @@ export function Title() {
       {hasSaved ? <button className="btn" onClick={() => actions.resume()}>Continue last duel</button> : null}
       <div className="text-[15px] opacity-60">{connected ? "Connected to the server." : "Connecting to the server…"}</div>
       {error ? <div className="text-hp">{error}</div> : null}
+      <GraphicsToggle />
     </div>
   );
 }

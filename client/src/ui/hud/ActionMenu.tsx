@@ -74,8 +74,8 @@ export function ActionMenu({ popup }: { popup: Popup }) {
         <div className="flex items-center gap-1">
           <span className="font-pixel text-[11px] text-paper truncate flex-1">{def.name}</span>
           {info.atk !== undefined || def.kind === "monster" ? (
-            <span className="font-pixel text-[10px] bg-ink px-1">
-              <Kw k="atk"><span className="text-[#ffb35c]">{info.atk ?? def.atk}</span></Kw>/<Kw k="def"><span className="text-[#9fd3ff]">{(info.def ?? def.def) - (info.damage ?? 0)}</span></Kw>
+            <span className="font-pixel text-[10px] stat-plate px-1">
+              <Kw k="atk"><span className="text-atk">{info.atk ?? def.atk}</span></Kw>/<Kw k="def"><span className="text-def">{(info.def ?? def.def) - (info.damage ?? 0)}</span></Kw>
             </span>
           ) : null}
         </div>

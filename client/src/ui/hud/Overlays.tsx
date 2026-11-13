@@ -167,10 +167,10 @@ export function Banner() {
   const { ui } = useGame();
   const banner = useStore(ui.duel, (d) => d.banner);
   if (!banner) return null;
-  const color = banner.tone === "me" ? "bg-gold text-ink" : banner.tone === "opp" ? "bg-[#5a3a7a] text-paper" : "bg-hp text-paper";
+  const color = banner.tone === "me" ? "bg-gold text-ink" : banner.tone === "opp" ? "bg-plum text-paper" : "bg-hp text-paper";
   return (
     <div key={banner.id} className="absolute inset-x-0 top-[40%] z-30 pointer-events-none overflow-hidden banner-wrap">
-      <div className={`banner font-pixel text-[30px] py-3 text-center ${color}`} style={{ textShadow: "3px 3px 0 #1c1a24" }}>
+      <div className={`banner font-pixel text-[30px] py-3 text-center ${color}`} style={{ textShadow: "3px 3px 0 #14121c" }}>
         {banner.text}
       </div>
     </div>

@@ -1,12 +1,17 @@
 /**
- * Original pixel art, drawn in code: every monster is grown from its card id (a mirrored body, smoothed, then
- * outlined, shaded and given eyes and affinity features), so each card has a stable look without any copied art.
+ * Original pixel art, drawn in code from the one palette (gfx/palette.ts). Monster and spell art comes from the
+ * shape definitions in gfx/art.ts, rendered by gfx/sculpt.ts at whatever pixel size a view needs. Card faces come
+ * from gfx/frames.ts, and the board's background from gfx/board-art.ts.
  * Everything returns a small canvas: Pixi turns it into a nearest-sampled texture, the HUD into an <img>.
  */
-import { card, type Affinity, type FieldId } from "@sigilbound/engine";
-import { AFFINITY, FIELD_TILES, UI } from "./palette.js";
+import { card, type FieldId } from "@sigilbound/engine";
+import { MONSTER_ART, PNG_ART, SPELL_ART } from "./art.js";
+import { bayer, cardFaceCanvas, Px, type CardSize } from "./frames.js";
+import { FIELD_TILES, PAL, UI } from "./palette.js";
+import { render } from "./sculpt.js";
 
-export const MONSTER_PX = 24;
+/** Monster art size on the board (one board pixel per art pixel). */
+export const MONSTER_PX = 48;
 
 function seeded(text: string): () => number {
   let h = 2166136261;
@@ -21,12 +26,8 @@ function seeded(text: string): () => number {
 }
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d")!;
-  ctx.imageSmoothingEnabled = false;
-  return [c, ctx];
+  const p = new Px(w, h);
+  return [p.c, p.g];
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
@@ -36,193 +37,132 @@ function cached(key: string, make: () => HTMLCanvasElement): HTMLCanvasElement {
   return c;
 }
 
-/** 0 empty, 1 body, 2 accent, 3 eye white, 4 pupil. */
-type Grid = number[][];
-
-function grow(id: string, affinity: Affinity, cost: number): Grid {
-  const N = MONSTER_PX, half = N / 2;
-  const rand = seeded(id);
-  const g: Grid = Array.from({ length: N }, () => Array(N).fill(0));
-  const size = 0.55 + Math.min(cost, 6) * 0.07; // bigger cards are bigger critters
-  const bodyRx = (4 + rand() * 3) * size + 1.5, bodyRy = (4 + rand() * 2.5) * size + 1;
-  const bodyCy = 15 - rand() * 2;
-  const headR = (3 + rand() * 2) * size + 1;
-  const headCy = bodyCy - bodyRy * 0.9 - headR * 0.4;
-  for (let y = 0; y < N; y++) {
-    for (let x = 0; x < half; x++) {
-      const dx = half - 0.5 - x;
-      const inBody = (dx / bodyRx) ** 2 + ((y - bodyCy) / bodyRy) ** 2 <= 1;
-      const inHead = (dx / headR) ** 2 + ((y - headCy) / headR) ** 2 <= 1;
-      const noise = rand() < 0.18 && (dx / (bodyRx + 1.5)) ** 2 + ((y - bodyCy) / (bodyRy + 1.5)) ** 2 <= 1;
-      if (inBody || inHead || noise) g[y]![x] = 1;
-    }
-  }
-  // Smooth (one cellular step) so noise becomes lumps, not static.
-  const copy = g.map((r) => [...r]);
-  for (let y = 1; y < N - 1; y++) {
-    for (let x = 1; x < half; x++) {
-      let n = 0;
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) if (copy[y + oy]![x + ox]) n++;
-      g[y]![x] = n >= 5 ? 1 : n <= 2 ? 0 : copy[y]![x]!;
-    }
-  }
-  // Legs.
-  const legX = Math.round(half - bodyRx * 0.55);
-  const legTop = Math.round(bodyCy + bodyRy * 0.6);
-  for (let y = legTop; y < Math.min(N - 1, legTop + 3 + Math.floor(rand() * 2)); y++) {
-    g[y]![legX] = 1;
-    if (rand() < 0.6) g[y]![legX - 1] = 1;
-  }
-  // Affinity features, in the accent colour.
-  const top = Math.max(1, Math.round(headCy - headR));
-  const hx = Math.round(half - headR * 0.6);
-  if (affinity === "fire") {
-    for (let i = 0; i < 3; i++) if (top - i >= 0) g[top - i]![Math.max(0, hx - i)] = 2; // horns
-    const tailY = Math.round(bodyCy);
-    for (let i = 0; i < 3; i++) g[tailY - i]![Math.max(0, Math.round(half - bodyRx) - 1 - i)] = 2;
-  } else if (affinity === "water") {
-    const finY = Math.round(bodyCy - bodyRy * 0.2);
-    for (let i = 0; i < 3; i++) g[finY + i]![Math.max(0, Math.round(half - bodyRx) - 1)] = 2;
-    for (let i = 0; i < 2; i++) if (top - 1 >= 0) g[top - 1]![half - 1 - i] = 2; // crest
-  } else if (affinity === "air") {
-    const wy = Math.round(bodyCy - bodyRy * 0.5);
-    for (let i = 0; i < 4; i++) for (let j = 0; j <= i; j++) {
-      const x = Math.round(half - bodyRx) - 1 - j, y = wy - 2 + i;
-      if (x >= 0 && y >= 0) g[y]![x] = 2;
-    }
-  } else if (affinity === "earth") {
-    for (let i = 0; i < 4; i++) {
-      const x = Math.round(half - 1 - rand() * bodyRx), y = Math.round(bodyCy - bodyRy * 0.8 - rand());
-      if (g[y + 1]?.[x]) g[y]![x] = 2; // mossy/rocky bumps
-    }
-  }
-  // Eyes on the head.
-  const ey = Math.round(headCy - headR * 0.1);
-  const ex = Math.round(half - 1 - headR * 0.35);
-  if (g[ey]?.[ex]) {
-    g[ey]![ex] = 3;
-    g[ey + 1]![ex] = 4;
-    if (cost >= 4 && g[ey]![ex - 1]) g[ey]![ex - 1] = 3;
-  }
-  // Mirror.
-  for (let y = 0; y < N; y++) for (let x = 0; x < half; x++) g[y]![N - 1 - x] = g[y]![x]!;
-  return g;
+/** Hand-drawn PNG overrides (see PNG_ART in art.ts), loaded once and drawn into a canvas of the right size. */
+function pngArt(id: string, size: number): HTMLCanvasElement | null {
+  const url = PNG_ART[id];
+  if (!url) return null;
+  const [c, ctx] = canvas(size, size);
+  const img = new Image();
+  img.onload = () => ctx.drawImage(img, 0, 0, size, size);
+  img.src = url;
+  return c;
 }
 
-/** A 24×24 monster. */
-export function monsterCanvas(id: string): HTMLCanvasElement {
-  return cached(`m:${id}`, () => {
-    const def = card(id);
-    const pal = AFFINITY[def.affinity];
-    const g = grow(id, def.affinity, def.cost);
-    const N = MONSTER_PX;
-    const [c, ctx] = canvas(N, N);
-    const at = (x: number, y: number) => (x < 0 || y < 0 || x >= N || y >= N ? 0 : g[y]![x]!);
-    for (let y = 0; y < N; y++) {
-      for (let x = 0; x < N; x++) {
-        const v = at(x, y);
-        let color: string | null = null;
-        if (!v) {
-          if (at(x - 1, y) || at(x + 1, y) || at(x, y - 1) || at(x, y + 1)) color = pal.body[0];
-        } else if (v === 3) color = "#ffffff";
-        else if (v === 4) color = UI.ink;
-        else {
-          const ramp = v === 2 ? pal.accent : pal.body;
-          // Light from the top left.
-          color = !at(x, y - 1) || !at(x - 1, y) ? ramp[3] : !at(x, y + 1) || !at(x + 1, y + 1) ? ramp[1] : ramp[2];
-        }
-        if (color) {
-          ctx.fillStyle = color;
-          ctx.fillRect(x, y, 1, 1);
-        }
-      }
-    }
-    return c;
+/** A monster at `size`×`size` (48 on the board). */
+export function monsterCanvas(id: string, size = MONSTER_PX): HTMLCanvasElement {
+  return cached(`m:${id}:${size}`, () => {
+    const png = pngArt(id, size);
+    if (png) return png;
+    const sc = MONSTER_ART[id];
+    if (sc) return render(sc, size);
+    // Unknown id: a plain silhouette so nothing crashes.
+    return render({ prims: [], eyes: [] }, size);
   });
 }
 
-/** 16×16 icons for spells, by kind. */
+/** A spell's own art at `size`. */
+export function spellArtCanvas(id: string, size = 48): HTMLCanvasElement {
+  return cached(`sa:${id}:${size}`, () => pngArt(id, size) ?? render(SPELL_ART[id] ?? SPELL_ART.spark!, size));
+}
+
+/** 16×16 icons for spells by kind (face-up set spells on the board, small UI marks). */
 const SPELL_ICONS: Record<string, string[]> = {
   quick: [
-    "................", ".........##.....", "........#yy#....", ".......#yy#.....", "......#yy#......",
-    ".....#yyyy###...", "....#yyyyyyy#...", "...###yyyy#.....", ".....#yy#.......", "....#yy#........",
+    "................", ".........##.....", "........#yy#....", ".......#yYy#....", "......#yYy#.....",
+    ".....#yyyy###...", "....#yYyyyyy#...", "...###yyyy#.....", ".....#yy#.......", "....#yy#........",
     "...#yy#.........", "..#yy#..........", "..#y#...........", "..##............", "................",
     "................",
   ],
   prepared: [
-    "................", "..###########...", ".#ppppppppppp#..", ".#p#########p#..", "..#wwwwwwwww#...",
-    "..#w.......w#...", "..#w.##.##.w#...", "..#w.......w#...", "..#w.###.#.w#...", "..#w.......w#...",
-    "..#wwwwwwwww#...", ".#p#########p#..", ".#ppppppppppp#..", "..###########...", "................",
+    "................", "..###########...", ".#PppppppppP#...", ".#p#########p#..", "..#wwwwwwwww#...",
+    "..#w.......w#...", "..#w.aa.aa.w#...", "..#w.......w#...", "..#w.aaa.a.w#...", "..#w.......w#...",
+    "..#wwwwwwwww#...", ".#p#########p#..", ".#PppppppppP#...", "..###########...", "................",
     "................",
   ],
   ambush: [
-    "................", "................", "....########....", "...#rrrrrrrr#...", "..#rr######rr#..",
-    ".#rr#wwwwww#rr#.", ".#r#ww#kk#ww#r#.", ".#r#w#kkkk#w#r#.", ".#r#ww#kk#ww#r#.", ".#rr#wwwwww#rr#.",
+    "................", "................", "....########....", "...#rrrrrrrr#...", "..#rR######rr#..",
+    ".#rR#wwwwww#rr#.", ".#r#ww#kk#ww#r#.", ".#r#w#kWkk#w#r#.", ".#r#ww#kk#ww#r#.", ".#rr#wwwwww#rr#.",
     "..#rr######rr#..", "...#rrrrrrrr#...", "....########....", "................", "................",
     "................",
   ],
 };
 const ICON_COLORS: Record<string, string> = {
-  "#": UI.ink, y: "#f6cf4a", p: "#c49a52", w: "#f4e8c8", r: "#b8434a", k: "#3a2a5a",
+  "#": PAL.ink, y: PAL.gold3, Y: PAL.gold4, p: PAL.wood3, P: PAL.wood4, w: PAL.paper, a: PAL.arc2, r: PAL.fire1,
+  R: PAL.red, k: PAL.plum, W: PAL.white,
 };
 
+function fromRows(rows: string[], colors: Record<string, string>): HTMLCanvasElement {
+  const [c, ctx] = canvas(rows[0]!.length, rows.length);
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    const col = colors[ch];
+    if (!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
+  }));
+  return c;
+}
+
 export function spellCanvas(kind: string): HTMLCanvasElement {
-  return cached(`s:${kind}`, () => {
-    const rows = SPELL_ICONS[kind] ?? SPELL_ICONS.quick!;
-    const [c, ctx] = canvas(16, 16);
-    rows.forEach((row, y) => [...row].forEach((ch, x) => {
-      const col = ICON_COLORS[ch];
-      if (!col) return;
-      ctx.fillStyle = col;
-      ctx.fillRect(x, y, 1, 1);
-    }));
-    return c;
-  });
+  return cached(`s:${kind}`, () => fromRows(SPELL_ICONS[kind] ?? SPELL_ICONS.quick!, ICON_COLORS));
 }
 
-/** Any card's art: a monster or its spell kind's icon. */
-export function artCanvas(id: string): HTMLCanvasElement {
+/** Any card's art: a monster, or the spell's own art. `size` defaults to the full 48. */
+export function artCanvas(id: string, size = 48): HTMLCanvasElement {
   const def = card(id);
-  if (def.kind === "monster") return monsterCanvas(id);
+  if (def.kind === "monster") return monsterCanvas(id, size);
   if (def.kind === "hidden") return cardBackCanvas();
-  return spellCanvas(def.kind);
+  return spellArtCanvas(id, size);
 }
 
-/** The back of a card, 16×20. */
-export function cardBackCanvas(): HTMLCanvasElement {
-  return cached("back", () => {
-    const [c, ctx] = canvas(16, 20);
-    ctx.fillStyle = UI.woodDark;
-    ctx.fillRect(0, 0, 16, 20);
-    ctx.fillStyle = "#5a3a7a";
-    ctx.fillRect(1, 1, 14, 18);
-    ctx.fillStyle = "#7a56a0";
-    for (let y = 2; y < 18; y += 2) for (let x = 2 + (y % 4 === 0 ? 1 : 0); x < 14; x += 2) ctx.fillRect(x, y, 1, 1);
-    ctx.fillStyle = UI.gold;
-    ctx.fillRect(7, 6, 2, 8);
-    ctx.fillRect(5, 9, 6, 2);
-    return c;
+/** A whole card face (frame, gem, art, panels; no text) for a layout in gfx/frames.ts. */
+export function cardCanvas(id: string, size: CardSize): HTMLCanvasElement {
+  if (id === "hidden") return cardBackOf(size === "board" ? 56 : size === "pile" ? 28 : size === "tiny" ? 16 : 50, size === "board" ? 68 : size === "pile" ? 34 : size === "tiny" ? 20 : 70);
+  // On the board the art is its own sprite (so it can breathe and flash), so the frame is drawn without it.
+  return cardFaceCanvas(id, size, size === "board" ? () => document.createElement("canvas") : artCanvas);
+}
+
+/**
+ * The back of a card at any size: a plum field with an arcane lattice, a gold inner line and a gold seal. Used for
+ * decks, the rival's hand, face-down spells and hidden cards.
+ */
+export function cardBackOf(w: number, h: number): HTMLCanvasElement {
+  return cached(`back:${w}x${h}`, () => {
+    const p = new Px(w, h);
+    p.rect(0, 0, w, h, PAL.ink).rect(1, 1, w - 2, h - 2, PAL.dusk);
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) if ((x + y) % 4 === 0 || (x - y + 400) % 4 === 0) p.px(x, y, PAL.plum);
+    p.bevel({ x: 1, y: 1, w: w - 2, h: h - 2 }, PAL.mauve, PAL.night);
+    if (w >= 12) {
+      p.bevel({ x: 2, y: 2, w: w - 4, h: h - 4 }, PAL.gold2, PAL.gold1);
+    }
+    // The seal: a gold diamond with an arcane eye.
+    const cx = (w - 1) / 2, cy = (h - 1) / 2, r = Math.max(1.5, Math.min(w, h) / 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const d = Math.abs(x - cx) + Math.abs(y - cy);
+        if (d > r + 0.2) continue;
+        const lit = x - cx + (y - cy) < 0;
+        p.px(x, y, d > r - 1 ? PAL.gold1 : lit ? PAL.gold4 : PAL.gold3);
+      }
+    }
+    if (r >= 3) p.px(Math.floor(cx), Math.floor(cy), PAL.arc2).px(Math.ceil(cx), Math.ceil(cy), PAL.arc2);
+    return p.c;
   });
+}
+
+/** The back of a card, 16×20 (deck piles, face-down spells, draws). */
+export function cardBackCanvas(): HTMLCanvasElement {
+  return cardBackOf(16, 20);
 }
 
 /** A Sigil gem, 7×9. */
 export function sigilCanvas(tapped: boolean): HTMLCanvasElement {
-  return cached(`sig:${tapped}`, () => {
-    const [c, ctx] = canvas(7, 9);
-    const rows = ["...#...", "..#a#..", ".#aab#.", "#aaabb#", "#aabbb#", ".#abb#.", "..#b#..", "...#...", "......."];
-    const col: Record<string, string> = tapped
-      ? { "#": "#3a3440", a: "#6d6577", b: "#4c4555" }
-      : { "#": "#2a1a4a", a: "#c9a7ff", b: "#8a5ad8" };
-    rows.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (!col[ch]) return;
-      ctx.fillStyle = col[ch]!;
-      ctx.fillRect(x, y, 1, 1);
-    }));
-    return c;
-  });
+  return cached(`sig:${tapped}`, () => fromRows(
+    ["...#...", "..#a#..", ".#aab#.", "#aaabb#", "#aabbb#", ".#abb#.", "..#b#..", "...#...", "......."],
+    tapped ? { "#": PAL.night, a: PAL.mauve, b: PAL.plum } : { "#": PAL.ink, a: PAL.arc3, b: PAL.arc2 },
+  ));
 }
 
-/** A 32×32 terrain tile for a lane's field; tiles seamlessly. */
+/** A 32×32 terrain tile for a lane's field; tiles seamlessly. (Fields are off by default.) */
 export function fieldTileCanvas(f: FieldId): HTMLCanvasElement {
   return cached(`f:${f}`, () => {
     const t = FIELD_TILES[f];
@@ -233,134 +173,73 @@ export function fieldTileCanvas(f: FieldId): HTMLCanvasElement {
     const rand = seeded(f);
     for (let i = 0; i < 70; i++) {
       ctx.fillStyle = t.specks[Math.floor(rand() * t.specks.length)]!;
-      const x = Math.floor(rand() * S), y = Math.floor(rand() * S);
-      const w = 1 + Math.floor(rand() * 2);
-      ctx.fillRect(x, y, w, 1);
-    }
-    if (f === "crossroads" || f === "old_forest") {
-      // Grass tufts.
-      ctx.fillStyle = f === "crossroads" ? "#5f8a36" : "#2a4a1c";
-      for (let i = 0; i < 8; i++) {
-        const x = Math.floor(rand() * (S - 3)), y = 2 + Math.floor(rand() * (S - 3));
-        ctx.fillRect(x, y, 1, 2);
-        ctx.fillRect(x + 2, y, 1, 2);
-        ctx.fillRect(x + 1, y - 1, 1, 3);
-      }
-    }
-    if (f === "deep_lake") {
-      ctx.fillStyle = "#8fd3ea";
-      for (let i = 0; i < 4; i++) {
-        const x = Math.floor(rand() * (S - 5)), y = Math.floor(rand() * S);
-        ctx.fillRect(x, y, 3, 1);
-        ctx.fillRect(x + 3, y - 1 < 0 ? 0 : y - 1, 2, 1);
-      }
-    }
-    if (f === "volcano") {
-      ctx.fillStyle = "#f6a23a";
-      for (let i = 0; i < 3; i++) {
-        const x = Math.floor(rand() * (S - 4)), y = Math.floor(rand() * S);
-        ctx.fillRect(x, y, 4, 1);
-        ctx.fillStyle = "#e0602c";
-      }
-    }
-    return c;
-  });
-}
-
-/** Little 7×7 keyword badges. */
-const BADGES: Record<string, { rows: string[]; color: string }> = {
-  guard: { rows: [".#####.", "#ggggg#", "#ggwgg#", "#gwwwg#", ".#ggg#.", "..#g#..", "...#..."], color: "#8fb8de" },
-  leap: { rows: ["#......", "##.....", "#w#....", "#ww#...", "#www###", ".#wwww#", "..####."], color: "#eef1fb" },
-  rush: { rows: ["...#...", "..#r#..", ".#rr#..", ".#ryr#.", "#ryyr#.", "#ryyyr#", ".#####."], color: "#e0602c" },
-  awaken: { rows: ["...#...", "..#y#..", "##yyy##", "#yyyyy#", ".#yyy#.", ".#y#y#.", ".#...#."], color: "#f6cf4a" },
-};
-
-export function badgeCanvas(kind: keyof typeof BADGES): HTMLCanvasElement {
-  return cached(`b:${kind}`, () => {
-    const b = BADGES[kind]!;
-    const [c, ctx] = canvas(7, 7);
-    const col: Record<string, string> = { "#": UI.ink, g: b.color, w: b.color, r: "#e0602c", y: "#f6cf4a" };
-    b.rows.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (!col[ch]) return;
-      ctx.fillStyle = col[ch]!;
-      ctx.fillRect(x, y, 1, 1);
-    }));
-    return c;
-  });
-}
-
-export function dataUrl(c: HTMLCanvasElement): string {
-  return c.toDataURL();
-}
-
-/** A Sigil: a small face-down card with a gem, 12×16. */
-export function sigilCardCanvas(): HTMLCanvasElement {
-  return cached("sigcard", () => {
-    const [c, ctx] = canvas(12, 16);
-    ctx.fillStyle = UI.ink;
-    ctx.fillRect(0, 0, 12, 16);
-    ctx.fillStyle = "#4a2f6e";
-    ctx.fillRect(1, 1, 10, 14);
-    ctx.fillStyle = "#6a4796";
-    ctx.fillRect(2, 2, 8, 12);
-    const gem = ["..#..", ".#a#.", "#aab#", ".#b#.", "..#.."];
-    const col: Record<string, string> = { "#": "#2a1a4a", a: "#e2ccff", b: "#a57ae6" };
-    gem.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (!col[ch]) return;
-      ctx.fillStyle = col[ch]!;
-      ctx.fillRect(3 + x, 5 + y, 1, 1);
-    }));
-    return c;
-  });
-}
-
-/** A tiny card back for the rival's hand, 8×10. */
-export function tinyBackCanvas(): HTMLCanvasElement {
-  return cached("tinyback", () => {
-    const [c, ctx] = canvas(8, 10);
-    ctx.fillStyle = UI.woodDark;
-    ctx.fillRect(0, 0, 8, 10);
-    ctx.fillStyle = "#5a3a7a";
-    ctx.fillRect(1, 1, 6, 8);
-    ctx.fillStyle = UI.gold;
-    ctx.fillRect(3, 3, 2, 4);
-    return c;
-  });
-}
-
-/** The plain lane surface: a muted, seamless 32×32 tile (fields are off for now). */
-export function laneTileCanvas(): HTMLCanvasElement {
-  return cached("lane", () => {
-    const S = 32;
-    const [c, ctx] = canvas(S, S);
-    ctx.fillStyle = "#6f9a48";
-    ctx.fillRect(0, 0, S, S);
-    const rand = seeded("lane");
-    const specks = ["#638c40", "#7ca852", "#5d843b", "#86b05a"];
-    for (let i = 0; i < 60; i++) {
-      ctx.fillStyle = specks[Math.floor(rand() * specks.length)]!;
       ctx.fillRect(Math.floor(rand() * S), Math.floor(rand() * S), 1 + Math.floor(rand() * 2), 1);
     }
     return c;
   });
 }
 
-/** The wooden table edge around the lanes, 32×32. */
-export function tableTileCanvas(): HTMLCanvasElement {
-  return cached("table", () => {
-    const S = 32;
-    const [c, ctx] = canvas(S, S);
-    ctx.fillStyle = "#4a3324";
-    ctx.fillRect(0, 0, S, S);
-    for (let y = 0; y < S; y += 8) {
-      ctx.fillStyle = "#3d2a1d";
-      ctx.fillRect(0, y, S, 1);
-      ctx.fillStyle = "#563c2a";
-      ctx.fillRect(0, y + 1, S, 1);
-    }
-    const rand = seeded("table");
-    ctx.fillStyle = "#3d2a1d";
-    for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(rand() * S), Math.floor(rand() * S), 3, 1);
-    return c;
+/** Little 7×7 keyword badges, outlined in ink so they read on any frame. */
+const BADGES: Record<string, { rows: string[]; colors: Record<string, string> }> = {
+  guard: { rows: [".#####.", "#lbbbb#", "#lbwbb#", "#bwwwd#", ".#bbd#.", "..#d#..", "...#..."], colors: { "#": PAL.ink, b: PAL.tide3, l: PAL.tide4, d: PAL.tide2, w: PAL.white } },
+  leap: { rows: ["##.....", "#w#....", "#lw#...", "#llw###", "#lllllw", ".#dddd#", "..####."], colors: { "#": PAL.ink, w: PAL.white, l: PAL.gale3, d: PAL.gale2 } },
+  rush: { rows: ["...#...", "..#r#..", ".#rr#..", ".#ryr#.", "#ryyr#.", "#ryYyr#", ".#####."], colors: { "#": PAL.ink, r: PAL.fire3, y: PAL.fire4, Y: PAL.fire5 } },
+  awaken: { rows: ["...#...", "..#Y#..", "##yYy##", "#yyYyy#", ".#yyy#.", ".#d#d#.", ".#...#."], colors: { "#": PAL.ink, y: PAL.gold3, Y: PAL.gold4, d: PAL.gold2 } },
+};
+
+export function badgeCanvas(kind: keyof typeof BADGES): HTMLCanvasElement {
+  return cached(`b:${kind}`, () => fromRows(BADGES[kind]!.rows, BADGES[kind]!.colors));
+}
+
+export function dataUrl(c: HTMLCanvasElement): string {
+  return c.toDataURL();
+}
+
+/** A Sigil: a small face-down card with a glowing gem, 12×16. */
+export function sigilCardCanvas(): HTMLCanvasElement {
+  return cached("sigcard", () => {
+    const p = new Px(12, 16);
+    p.rect(0, 0, 12, 16, PAL.ink).rect(1, 1, 10, 14, PAL.plum);
+    for (let y = 2; y < 14; y++) for (let x = 2; x < 10; x++) if (bayer(x, y) < (y - 2) / 14) p.px(x, y, PAL.dusk);
+    p.bevel({ x: 1, y: 1, w: 10, h: 14 }, PAL.lilac, PAL.night);
+    p.draw(sigilCanvas(false), 2.5, 3.5);
+    p.px(5, 5, PAL.gale4);
+    return p.c;
   });
 }
+
+/** A tiny card back for the rival's hand, 8×10. */
+export function tinyBackCanvas(): HTMLCanvasElement {
+  return cardBackOf(8, 10);
+}
+
+/** The plain lane surface: a woven felt, seamless 32×32 (fields are off for now). */
+export function laneTileCanvas(): HTMLCanvasElement {
+  return cached("lane", () => {
+    const p = new Px(32, 32);
+    p.rect(0, 0, 32, 32, PAL.moss2);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      if ((x + y * 3) % 7 === 0) p.px(x, y, PAL.moss1);
+      else if ((x * 5 + y) % 13 === 0) p.px(x, y, PAL.moss3);
+    }
+    return p.c;
+  });
+}
+
+/** Wooden table planks, 32×32, seamless. */
+export function tableTileCanvas(): HTMLCanvasElement {
+  return cached("table", () => {
+    const p = new Px(32, 32);
+    const rand = seeded("table");
+    for (let row = 0; row < 4; row++) {
+      const y0 = row * 8;
+      p.rect(0, y0, 32, 8, row % 2 ? PAL.wood1 : PAL.wood2);
+      p.rect(0, y0, 32, 1, PAL.wood0);
+      p.rect(0, y0 + 1, 32, 1, row % 2 ? PAL.wood2 : PAL.wood3);
+      for (let i = 0; i < 4; i++) p.rect(Math.floor(rand() * 28), y0 + 2 + Math.floor(rand() * 5), 3 + Math.floor(rand() * 4), 1, row % 2 ? PAL.wood0 : PAL.wood1);
+    }
+    return p.c;
+  });
+}
+
+export { UI };

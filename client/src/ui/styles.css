@@ -7,19 +7,27 @@
   --font-pixel: "Silkscreen", monospace;
   --font-body: "VT323", monospace;
 
-  --color-ink: #1c1a24;
-  --color-night: #262335;
-  --color-dusk: #3a3350;
-  --color-paper: #f4e8c8;
-  --color-paper-dark: #d9c49a;
-  --color-wood: #7a4f2c;
-  --color-wood-dark: #4a2e18;
-  --color-wood-light: #a8703f;
-  --color-gold: #f2c14e;
-  --color-hp: #d9483b;
-  --color-leaf: #6abe30;
-  --color-sky: #5b9bd5;
-  --color-arcane: #c9a7ff;
+  /* Mirrors gfx/palette.ts (PAL). */
+  --color-ink: #14121c;
+  --color-night: #1f1b2e;
+  --color-dusk: #2e2842;
+  --color-plum: #463a5e;
+  --color-mauve: #6b5a85;
+  --color-paper: #fff3d6;
+  --color-paper-mid: #f0dcae;
+  --color-paper-dark: #d4b47f;
+  --color-paper-deep: #9c7a4e;
+  --color-wood: #6b4226;
+  --color-wood-dark: #47291a;
+  --color-wood-deep: #2a1910;
+  --color-wood-light: #925f37;
+  --color-gold: #f2c24e;
+  --color-gold-dark: #c48a22;
+  --color-gold-light: #fff0a6;
+  --color-hp: #e0483c;
+  --color-leaf: #7fae3a;
+  --color-sky: #3fa2d9;
+  --color-arcane: #b58cff;
   --color-target: #ff6b5b;
 }
 
@@ -27,7 +35,7 @@ html, body, #ui { height: 100%; margin: 0; }
 /* clip, not hidden: hidden boxes can still be scrolled by focus or scrollIntoView, which slid the whole duel up. */
 html, body, #ui { overflow: clip; }
 body {
-  background: #1c1a24;
+  background: var(--color-night);
   color: var(--color-paper);
   font-family: var(--font-body);
   font-size: 18px;
@@ -40,33 +48,53 @@ body {
 img.pixel, canvas.board-canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 canvas.board-canvas { display: block; }
 
-/* A wooden panel with a 2px pixel border (box-shadows, not rounded corners). */
+/* A wooden panel: ink outline, plank face with a light top-left bevel, a dark bottom-right bevel, a hard drop shadow. */
 .panel {
-  background: var(--color-wood);
+  background:
+    repeating-linear-gradient(180deg, transparent 0 14px, #47291a 14px 16px),
+    var(--color-wood);
   box-shadow:
-    inset 0 0 0 2px var(--color-wood-dark),
-    inset 0 2px 0 4px var(--color-wood-light),
-    0 4px 0 0 #00000066;
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px var(--color-wood-light),
+    inset -2px -2px 0 2px var(--color-wood-dark),
+    0 4px 0 0 #14121c99;
 }
 .paper {
   background: var(--color-paper);
   color: var(--color-ink);
-  box-shadow: inset 0 0 0 2px var(--color-wood-dark), inset 0 0 0 4px var(--color-paper-dark);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px #ffffff,
+    inset -2px -2px 0 2px var(--color-paper-dark),
+    0 4px 0 0 #14121c99;
 }
 .btn {
   font-family: var(--font-pixel);
   font-size: 12px;
-  padding: 6px 10px;
+  padding: 6px 10px 8px;
   background: var(--color-paper);
   color: var(--color-ink);
-  box-shadow: inset 0 0 0 2px var(--color-ink), inset -2px -4px 0 2px var(--color-paper-dark);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px #ffffff,
+    inset -2px -4px 0 2px var(--color-paper-dark),
+    0 2px 0 0 #14121c;
   cursor: pointer;
+  image-rendering: pixelated;
 }
-.btn:hover:not(:disabled) { background: #fff6dc; transform: translateY(-1px); }
-.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:hover:not(:disabled) { background: #fffaf0; transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 4px 0 2px var(--color-paper-dark); }
 .btn:disabled { opacity: 0.45; cursor: default; }
-.btn-gold { background: var(--color-gold); box-shadow: inset 0 0 0 2px var(--color-ink), inset -2px -4px 0 2px #b8862a; }
-.btn-red { background: #e8735f; box-shadow: inset 0 0 0 2px var(--color-ink), inset -2px -4px 0 2px #a8432f; }
+.btn-gold {
+  background: var(--color-gold);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px var(--color-gold-light), inset -2px -4px 0 2px var(--color-gold-dark), 0 2px 0 0 #14121c;
+}
+.btn-gold:hover:not(:disabled) { background: #ffd56a; }
+.btn-red {
+  background: #ec6a2c; color: #fff3d6; text-shadow: 1px 1px 0 #3a0f12;
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px #ffa443, inset -2px -4px 0 2px #7d1f1c, 0 2px 0 0 #14121c;
+}
+.btn-red:hover:not(:disabled) { background: #ff7a3a; }
 
 @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--color-gold); } 50% { box-shadow: 0 0 0 2px #fff3a6; } }
 .glow { animation: pulse-glow 1s steps(2) infinite; }
@@ -82,8 +110,9 @@ canvas.board-canvas { display: block; }
 .kw-tip {
   position: fixed; z-index: 100; padding: 8px 10px; font-family: var(--font-body); font-size: 17px; line-height: 1.05;
   text-transform: none; text-align: left; font-weight: normal; letter-spacing: normal;
-  background: var(--color-ink); color: var(--color-paper);
-  box-shadow: inset 0 0 0 2px var(--color-gold), 0 4px 0 0 #00000088;
+  background: var(--color-night); color: var(--color-paper);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--color-gold), inset 0 0 0 6px var(--color-ink), 0 4px 0 0 #14121caa;
+  padding: 10px 12px;
   pointer-events: none; white-space: normal; display: block;
 }
 .kw-chip {
@@ -111,7 +140,11 @@ button:focus-visible, .btn:focus-visible { outline: 3px solid #ffffff; outline-o
 .choice-on { outline: 2px solid #ffffff; }
 
 /* Turn banner: sweeps in, holds, sweeps out. */
-.banner { animation: sweep 1100ms both; box-shadow: 0 4px 0 #1c1a24, 0 -4px 0 #1c1a24; }
+.banner {
+  animation: sweep 1100ms both;
+  box-shadow: 0 4px 0 #14121c, 0 -4px 0 #14121c, 0 8px 0 #c48a22, 0 -8px 0 #c48a22, 0 12px 0 #14121c, 0 -12px 0 #14121c;
+  text-shadow: 3px 3px 0 #c48a22;
+}
 @keyframes sweep {
   0% { transform: translateX(-100%); }
   18% { transform: translateX(0); }
@@ -127,6 +160,74 @@ button:focus-visible, .btn:focus-visible { outline: 3px solid #ffffff; outline-o
 }
 .pos-btn.on { background: var(--color-gold); outline: 3px solid #fff; }
 .pos-btn:hover { transform: translateY(-2px); }
-.pos-icon { display: block; background: #7a4f2c; box-shadow: inset 0 0 0 2px #1c1a24; }
+.pos-icon { display: block; background: var(--color-wood); box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px var(--color-wood-light); }
 .pos-icon.atk { width: 22px; height: 30px; }
 .pos-icon.def { width: 30px; height: 22px; margin: 4px 0; }
+
+/* Pixel scrollbars for lists and logs. */
+* { scrollbar-color: var(--color-mauve) var(--color-night); scrollbar-width: thin; }
+
+/* ---- card effects (ui/hud/CardFx.tsx), gated by <html data-gfx> ---- */
+.cardfx { position: relative; --mx: 50%; --my: 30%; --rx: 0deg; --ry: 0deg; --hue: 0deg; transform-style: preserve-3d; }
+.cardfx > .card-face { transition: transform 120ms ease-out; }
+.cardfx-holo, .cardfx-gloss, .cardfx-crest { position: absolute; pointer-events: none; display: none; }
+.cardfx-holo, .cardfx-gloss { inset: 4px; }
+html[data-gfx="low"] .cardfx-crest, html[data-gfx="high"] .cardfx-crest { display: block; }
+html[data-gfx="high"] .cardfx-holo, html[data-gfx="high"] .cardfx-gloss { display: block; }
+html[data-gfx="high"] .cardfx:hover > .card-face { transform: perspective(600px) rotateX(var(--rx)) rotateY(var(--ry)); }
+html[data-gfx="high"] .cardfx:hover > .cardfx-holo, html[data-gfx="high"] .cardfx:hover > .cardfx-gloss {
+  transform: perspective(600px) rotateX(var(--rx)) rotateY(var(--ry));
+}
+
+/* Foil: a rainbow band that slides with the cursor, dodged onto the card. Always on rare cards, on hover otherwise. */
+.cardfx-holo {
+  opacity: 0; transition: opacity 160ms;
+  background:
+    linear-gradient(115deg, transparent 20%, hsl(calc(var(--hue) + 0deg) 90% 70% / .55) 38%, hsl(calc(var(--hue) + 80deg) 90% 70% / .55) 50%,
+      hsl(calc(var(--hue) + 160deg) 90% 70% / .55) 62%, transparent 80%);
+  background-size: 250% 250%; background-position: var(--mx) var(--my);
+  mix-blend-mode: color-dodge;
+}
+.cardfx:hover > .cardfx-holo { opacity: .18; }
+.cardfx-rare > .cardfx-holo { opacity: .12; animation: holo-drift 6s steps(48) infinite; }
+.cardfx-rare:hover > .cardfx-holo { opacity: .28; animation: none; }
+@keyframes holo-drift { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+
+/* Gloss: a specular spot under the cursor. */
+.cardfx-gloss {
+  opacity: 0; transition: opacity 160ms;
+  background: radial-gradient(circle at var(--mx) var(--my), #ffffffaa 0, #ffffff22 22%, transparent 45%);
+  mix-blend-mode: soft-light;
+}
+.cardfx:hover > .cardfx-gloss { opacity: .7; }
+
+/* Per-Crest touches over the art window, all very subtle and stepped so they read as pixel animation. */
+.cardfx-crest { overflow: hidden; mix-blend-mode: screen; opacity: .5; }
+.cardfx-ember { background: repeating-linear-gradient(0deg, transparent 0 6px, #ffa44322 6px 8px, transparent 8px 14px); background-size: 100% 28px; animation: heat 1.6s steps(14) infinite; }
+@keyframes heat { from { background-position: 0 0; } to { background-position: 0 -28px; } }
+.cardfx-tide {
+  background:
+    radial-gradient(ellipse 18% 10% at 30% 40%, #86d6f233, transparent 70%),
+    radial-gradient(ellipse 14% 9% at 70% 60%, #d6f6ff2a, transparent 70%),
+    radial-gradient(ellipse 20% 8% at 50% 80%, #86d6f222, transparent 70%);
+  background-size: 60% 60%; animation: caustic 5s steps(30) infinite alternate;
+}
+@keyframes caustic { from { background-position: 0 0, 30px 10px, 10px 20px; } to { background-position: 40px 20px, 0 30px, 30px 0; } }
+.cardfx-stone { background: radial-gradient(circle 1.5px at 22% 30%, #fff0a6, transparent), radial-gradient(circle 1.5px at 74% 58%, #fff0a6, transparent); animation: glint 3.2s steps(1) infinite; }
+@keyframes glint { 0%, 70% { opacity: 0; } 72%, 80% { opacity: .9; } 82%, 100% { opacity: 0; } }
+.cardfx-gale { background: repeating-linear-gradient(170deg, transparent 0 10px, #eef4ff1c 10px 12px, transparent 12px 26px); background-size: 52px 100%; animation: drift 3s steps(26) infinite; }
+@keyframes drift { from { background-position: 0 0; } to { background-position: 52px 0; } }
+
+/* Graphics menu (ui/hud/GraphicsToggle.tsx). */
+/* Bottom right: the bottom-left corner is the turn dock (End turn, skip controls). */
+.gfx-toggle { position: fixed; right: 8px; bottom: 8px; z-index: 5; } /* under menus, popups and reveals */
+
+/* ---- controls HUD in the pixel theme (log strip, turn chip, hints, stat plates) ---- */
+.hud-strip {
+  background: color-mix(in srgb, var(--color-night) 92%, transparent); color: var(--color-paper);
+  box-shadow: inset 0 0 0 1px var(--color-ink), inset 0 0 0 2px var(--color-gold-dark), 0 2px 0 0 #14121caa;
+}
+.hud-well { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-deep), inset 2px 2px 0 1px #00000055; }
+.stat-plate { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-light); }
+.text-atk { color: #ffe08a; }
+.text-def { color: #d6f6ff; }

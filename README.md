@@ -22,7 +22,10 @@ Open http://localhost:5173, pick a deck, and play the AI (it plays the other dec
 - `server/`: hexagonal. `core/` (duels, AI turns, Ambush timers) talks to the world only through `core/ports.ts`.
   Outlets: `ws/` (game socket, Zod-validated), `api/` (health), `db/` (in-memory store for now). `main.ts` wires them.
 - `client/`: Vite + React 19 + Tailwind 4 for the HUD, PixiJS 8 for the board. The board is drawn at 336×216 and
-  scaled by a whole number with nearest sampling (shrinking below 1× only when the window is tiny). All art is generated in code (`client/src/gfx/`).
+  scaled by a whole number with nearest sampling (shrinking below 1× only when the window is tiny). All art is generated in code (`client/src/gfx/`). Palette in `gfx/palette.ts` (48 colours), monster and
+  spell shapes in `gfx/art.ts` (swap any for a PNG via `PNG_ART`), card frames in `gfx/frames.ts`, the board in
+  `gfx/board-art.ts`. The **Graphics** toggle (bottom left: Off / Low / High, saved) adds a lighting/post-processing
+  layer (`client/src/visuals/shaders/`) at native resolution; Off is the plain pixel art.
 
 ## Playing
 

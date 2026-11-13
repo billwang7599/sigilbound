@@ -50,8 +50,8 @@ export function HoverInfo() {
         <div className="flex items-center gap-1">
           <span className="font-pixel text-[11px] flex-1 truncate">{def.name}</span>
           {def.kind === "monster" ? (
-            <span className="font-pixel text-[10px] bg-ink px-1">
-              <span className="text-[#ffb35c]">{info.atk ?? def.atk}</span>/<span className="text-[#9fd3ff]">{(info.def ?? def.def) - (info.damage ?? 0)}</span>
+            <span className="font-pixel text-[10px] stat-plate px-1">
+              <span className="text-atk">{info.atk ?? def.atk}</span>/<span className="text-def">{(info.def ?? def.def) - (info.damage ?? 0)}</span>
             </span>
           ) : null}
         </div>
@@ -128,7 +128,7 @@ export function Reveal() {
       <div className="absolute" style={{ left: centre.left + 1, top: centre.top + 1 }}>
         <div ref={ref} className="absolute" style={{ left: 0, top: 0 }}>
           <div className="flex flex-col items-center" style={{ transform: `translate(-50%, -50%) scale(${fit})`, transformOrigin: "center" }}>
-            <div className="font-pixel text-[13px] bg-[#5a3a7a] text-paper px-2 py-1 mb-1" style={{ textShadow: "2px 2px 0 #1c1a24" }}>
+            <div className="font-pixel text-[13px] bg-plum text-paper px-2 py-1 mb-1" style={{ textShadow: "2px 2px 0 #14121c" }}>
               {reveal.id === "hidden" ? "RIVAL" : card(reveal.id).kind === "ambush" ? "AMBUSH!" : "RIVAL PLAYS"}
             </div>
             <CardFace id={reveal.id} size="big" />
@@ -155,8 +155,7 @@ export function PlayLog() {
   return (
     <div className="relative flex flex-col items-start gap-1 min-w-0 pointer-events-auto">
       <button
-        className="flex items-center gap-2 bg-ink/85 px-2 py-0.5 text-left max-w-full"
-        style={{ boxShadow: "inset 0 0 0 1px #4a2e18" }}
+        className="flex items-center gap-2 hud-strip px-2 py-0.5 text-left max-w-full"
         onClick={() => actions.toggle("logOpen")}
         title="Duel log (L)"
       >
@@ -165,7 +164,7 @@ export function PlayLog() {
       </button>
       {open ? (
         <div className="panel p-1.5 w-[400px] max-w-[60vw] pop-in absolute top-[30px] left-0">
-          <div className="max-h-[42vh] overflow-y-auto bg-ink/60 px-2 py-1 text-[15px] leading-[1.1]">
+          <div className="max-h-[42vh] overflow-y-auto hud-well px-2 py-1 text-[15px] leading-[1.1]">
             {log.map((l) => (
               <div
                 key={l.id}
@@ -203,7 +202,7 @@ export function TopBar() {
         <button className="btn !text-[9px]" onClick={() => actions.toggle("help")}>? Keys</button>
       </div>
       <div className="flex shrink-0">
-        <div className={`font-pixel text-[11px] px-3 py-1 pointer-events-auto flex items-center gap-2 whitespace-nowrap ${mine ? "bg-gold text-ink" : "bg-ink/85 text-paper"}`}>
+        <div className={`font-pixel text-[11px] px-3 py-1 pointer-events-auto flex items-center gap-2 whitespace-nowrap ${mine ? "bg-gold text-ink" : "hud-strip text-paper"}`}>
           <span>Turn {s.turn} · {phase}</span>
           <span className="opacity-40">|</span>
           <CrestChip name={`${crest.name} crest`} text={`${crest.text} Costs 2 Sigils, once per turn.`} />
@@ -237,7 +236,7 @@ export function TurnDock() {
     <div className="absolute left-2 bottom-2 z-[6] flex flex-col gap-1.5 w-[176px]">
       {mine ? (
         <>
-          {hint ? <div className="text-[14px] leading-tight bg-ink/75 px-1">{hint}</div> : null}
+          {hint ? <div className="text-[14px] leading-tight hud-strip px-1.5 py-0.5">{hint}</div> : null}
           {tide ? <button className="btn !text-[10px]" onClick={() => actions.act(tide)}>Tide crest +2 LP</button> : null}
           {legal.some((a) => a.type === "attackStep") ? (
             <button className="btn btn-red" onClick={() => actions.act({ type: "attackStep" })}>Attack step ⚔</button>
