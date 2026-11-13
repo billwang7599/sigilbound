@@ -1,3 +1,4 @@
+import { GraphicsToggle } from "../hud/GraphicsToggle.js";
 import { useCallback } from "react";
 import { useGame } from "../context.js";
 import { CardPopup } from "../hud/CardPopup.js";
@@ -29,6 +30,7 @@ export function Duel() {
       <GameOver />
       <DragGhost />
       <ErrorToast />
+      <GraphicsToggle />
     </div>
   );
 }

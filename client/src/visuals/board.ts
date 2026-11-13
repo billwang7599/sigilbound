@@ -6,16 +6,18 @@
  * `animate(event)` plays one server event, and `sync(state)` tweens whatever is left over into place. Pixi only
  * draws; the controller decides what pointer input means, using `keysAt` and the server's legal actions.
  */
-import { Application, Container, Graphics, Sprite, Text, Texture, TextureSource, TilingSprite } from "pixi.js";
+import { Application, Container, Graphics, RenderLayer, Sprite, Text, Texture, TextureSource } from "pixi.js";
 import {
   atkOf, card, defOf, hasLeap, isGuarding, type GameEvent, type GameState, type Monster, type PlayerId,
 } from "@sigilbound/engine";
 import { diff, emptyShown, wanted, type Shown } from "../core/reconcile.js";
 import { digitsCanvas } from "../gfx/digits.js";
-import { AFFINITY, UI } from "../gfx/palette.js";
+import { boardBackgroundCanvas } from "../gfx/board-art.js";
+import { PostFx } from "./shaders/index.js";
+import { lightFlash, type Light } from "./shaders/lights.js";
+import { AFFINITY, PAL, UI } from "../gfx/palette.js";
 import {
-  artCanvas, badgeCanvas, cardBackCanvas, laneTileCanvas, monsterCanvas, sigilCardCanvas, spellCanvas,
-  tableTileCanvas, tinyBackCanvas,
+  badgeCanvas, cardBackCanvas, cardCanvas, monsterCanvas, sigilCardCanvas, spellCanvas, tinyBackCanvas,
 } from "../gfx/sprites.js";
 
 export const BOARD_W = 336;
@@ -110,30 +112,36 @@ export function rectOfKey(key: string): Rect | null {
 
 const inside = (r: Rect, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 
+/** Numbers and badges render here, after the shader passes, so they stay sharp (see visuals/shaders). */
+let labelLayer: RenderLayer | null = null;
+
 interface Tween { t0: number; dur: number; step(k: number): void; resolve(): void }
 
 class MonsterView {
   readonly holder = new Container();
   readonly body = new Container();
   readonly art: Sprite;
+  readonly shadow: Graphics;
+  readonly artY: number;
   readonly overlay = new Container();
   position: "atk" | "def";
   constructor(readonly uid: number, readonly id: string, readonly side: Side, position: "atk" | "def") {
-    const def = card(id);
-    const pal = AFFINITY[def.affinity];
-    const frame = new Graphics();
-    frame.rect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H).fill(hex(pal.frameDark));
-    frame.rect(-CARD_W / 2 + 1, -CARD_H / 2 + 1, CARD_W - 2, CARD_H - 2).fill(hex(pal.frame));
-    frame.rect(-CARD_W / 2 + 3, -CARD_H / 2 + 3, CARD_W - 6, 50).fill(hex("#2a2438"));
-    frame.rect(-CARD_W / 2 + 3, -CARD_H / 2 + 3, CARD_W - 6, 1).fill({ color: 0x000000, alpha: 0.4 });
+    // A soft drop shadow toward the bottom right (the light is top left); it turns with the card.
+    this.shadow = new Graphics();
+    this.shadow.rect(-CARD_W / 2 + 2, -CARD_H / 2 + 3, CARD_W, CARD_H).fill({ color: hex(PAL.ink), alpha: 0.35 });
+    this.shadow.rect(-CARD_W / 2 + 1, -CARD_H / 2 + 2, CARD_W, CARD_H).fill({ color: hex(PAL.ink), alpha: 0.25 });
+    const frame = new Sprite(tex(cardCanvas(id, "board")));
+    frame.position.set(-CARD_W / 2, -CARD_H / 2);
     this.body.addChild(frame);
     this.art = new Sprite(tex(monsterCanvas(id)));
-    this.art.scale.set(side === "opp" ? -2 : 2, 2);
-    this.art.position.set(side === "opp" ? 24 : -24, -CARD_H / 2 + 4);
+    this.art.scale.set(side === "opp" ? -1 : 1, 1);
+    this.artY = -CARD_H / 2 + 6;
+    this.art.position.set(side === "opp" ? 24 : -24, this.artY);
     this.body.addChild(this.art);
     this.position = position;
     this.body.rotation = position === "def" ? Math.PI / 2 : 0;
-    this.holder.addChild(this.body, this.overlay);
+    this.holder.addChild(this.shadow, this.body, this.overlay);
+    labelLayer?.attach(this.overlay);
   }
 
   /** Stats plate and keyword badges (never rotated, so they stay readable). */
@@ -183,6 +191,10 @@ export class BoardView {
   private readonly marks = new Graphics();
   private readonly aim = new Graphics();
   private readonly fx = new Container();
+  private readonly world = new Container();
+  private readonly scene = new Container();
+  private readonly labels = new RenderLayer();
+  private readonly post: PostFx;
   private tweens: Tween[] = [];
   private time = 0;
   private host: HTMLElement | null = null;
@@ -200,8 +212,14 @@ export class BoardView {
   private me: PlayerId = 0;
 
   private constructor(private readonly app: Application) {
-    app.stage.addChild(this.bg, this.piles, this.sigilLayer, this.spellLayer, this.monsterLayer, this.marks, this.aim, this.fx);
+    labelLayer = this.labels;
+    this.world.addChild(this.bg, this.piles, this.sigilLayer, this.spellLayer, this.monsterLayer);
+    this.scene.addChild(this.world, this.marks, this.aim, this.fx);
+    app.stage.addChild(this.scene, this.labels);
     this.drawBackground();
+    this.labels.attach(this.lpSprites.me, this.lpSprites.opp);
+    this.post = new PostFx(app, { world: this.world, scene: this.scene, casters: [this.piles, this.sigilLayer, this.spellLayer, this.monsterLayer] },
+      () => this.lights());
     app.ticker.add((t) => {
       this.time += t.deltaMS;
       const now = performance.now();
@@ -214,7 +232,14 @@ export class BoardView {
         else keep.push(tw);
       }
       this.tweens = keep;
+      // Idle: monsters breathe (a 1px bob, out of step with each other); shadows turn with their cards.
+      for (const v of this.monsters.values()) {
+        if (v.holder.destroyed) continue;
+        v.shadow.rotation = v.body.rotation;
+        v.art.y = v.artY + (Math.floor((this.time + v.uid * 211) / 520) % 2 ? 1 : 0);
+      }
       this.marks.alpha = 0.7 + 0.3 * Math.sin(this.time / 160);
+      this.post.update(t.deltaMS);
     });
   }
 
@@ -254,6 +279,37 @@ export class BoardView {
     this.scale = fit >= 1 ? Math.floor(fit) : Math.max(0.25, fit);
     this.app.canvas.style.width = `${BOARD_W * this.scale}px`;
     this.app.canvas.style.height = `${BOARD_H * this.scale}px`;
+  }
+
+  /** Smoothed frame rate (the shader layer measures it). */
+  get fps(): number {
+    return this.post.fps;
+  }
+
+  /**
+   * Steady lights for the shader layer: monsters glow by affinity (Ember warm, Tide cool, faint Stone and Gale),
+   * untapped Sigils faintly. Only public things give off light, so it never hints at hidden cards.
+   */
+  private lights(): Light[] {
+    const out: Light[] = [];
+    const flicker = 0.9 + 0.1 * Math.sin(this.time / 90) * Math.sin(this.time / 37);
+    for (const v of this.monsters.values()) {
+      const h = v.holder;
+      if (h.destroyed || h.alpha < 0.05) continue;
+      const aff = card(v.id).affinity;
+      const glow = aff === "fire" ? { color: hex(PAL.fire4), radius: 58, intensity: 0.85 * flicker }
+        : aff === "water" ? { color: hex(PAL.tide3), radius: 50, intensity: 0.62 }
+          : aff === "earth" ? { color: hex(PAL.moss3), radius: 36, intensity: 0.3 }
+            : { color: hex(PAL.gale3), radius: 42, intensity: 0.36 };
+      out.push({ x: h.x, y: h.y - 6, ...glow, intensity: glow.intensity * h.alpha });
+    }
+    for (const side of ["me", "opp"] as const) {
+      for (const sv of this.sigils[side]) {
+        if (sv.tapped || sv.sprite.destroyed) continue;
+        out.push({ x: sv.sprite.x, y: sv.sprite.y, color: hex(PAL.arc3), radius: 16, intensity: 0.55 });
+      }
+    }
+    return out.slice(0, 12);
   }
 
   // ---- geometry for the controller ----
@@ -365,35 +421,22 @@ export class BoardView {
   // ---- static parts ----
 
   private drawBackground(): void {
-    const table = new TilingSprite({ texture: tex(tableTileCanvas()), width: BOARD_W, height: BOARD_H });
-    this.bg.addChild(table);
-    const lanes = new Graphics();
-    lanes.rect(FIELD.x, 0, FIELD.w, BOARD_H).fill({ color: 0x000000, alpha: 0.35 });
-    this.bg.addChild(lanes);
-    for (let lane = 0; lane < 3; lane++) {
-      const t = new TilingSprite({ texture: tex(laneTileCanvas()), width: LANE_W - 2, height: BOARD_H - 4 });
-      t.position.set(LANE_X[lane]! + 1, 2);
-      this.bg.addChild(t);
-    }
-    const g = new Graphics();
-    // The midline between the two sides.
-    g.rect(FIELD.x + 2, 107, FIELD.w - 4, 1).fill({ color: 0x000000, alpha: 0.35 });
-    g.rect(FIELD.x + 2, 108, FIELD.w - 4, 1).fill({ color: 0xffffff, alpha: 0.12 });
-    for (const side of ["opp", "me"] as const) {
-      for (let lane = 0; lane < 3; lane++) {
-        dashed(g, monsterRect(side, lane), 0xffffff, 0.35);
-        dashed(g, spellRect(side, lane), 0xffffff, 0.25);
-      }
-      // The Sigil row's mat.
-      const z = sigilZone(side);
-      g.rect(z.x + 2, z.y + (side === "me" ? 4 : 32), z.w - 4, side === "me" ? 68 : 68).fill({ color: 0x2a1a4a, alpha: 0.35 });
-      dashed(g, discardRect(side), 0xffffff, 0.25);
-    }
-    this.bg.addChild(g);
-    const sig = label("SIGILS", "#c9a7ff");
+    const sides = ["opp", "me"] as const;
+    const lanes = [0, 1, 2];
+    this.bg.addChild(new Sprite(tex(boardBackgroundCanvas({
+      w: BOARD_W, h: BOARD_H, field: FIELD,
+      lanes: LANE_X.map((x) => ({ x, y: 0, w: LANE_W, h: BOARD_H })),
+      monsterSlots: sides.flatMap((side) => lanes.map((l) => monsterRect(side, l))),
+      spellSlots: sides.flatMap((side) => lanes.map((l) => spellRect(side, l))),
+      sigilMats: sides.map((side) => { const z = sigilZone(side); return { x: z.x + 2, y: z.y + (side === "me" ? 4 : 32), w: z.w - 4, h: 68 }; }),
+      decks: sides.map(deckRect),
+      discards: sides.map(discardRect),
+      plaques: sides.map((side) => ({ x: LP_AT[side].x - 3, y: LP_AT[side].y - 3, w: 52, h: 27 })),
+    }))));
+    const sig = label("SIGILS", PAL.arc3);
     sig.alpha = 0.6;
     sig.position.set(26, 202);
-    const sig2 = label("SIGILS", "#c9a7ff");
+    const sig2 = label("SIGILS", PAL.arc3);
     sig2.alpha = 0.6;
     sig2.position.set(26, 2);
     const you = label("YOU", UI.gold);
@@ -401,6 +444,7 @@ export class BoardView {
     const rival = label("RIVAL", UI.gold);
     rival.position.set(280, 2);
     this.bg.addChild(sig, sig2, you, rival);
+    this.labels.attach(sig, sig2, you, rival);
     this.piles.addChild(this.lpSprites.me, this.lpSprites.opp);
   }
 
@@ -612,8 +656,8 @@ export class BoardView {
     const g = new Graphics();
     if (!n) dashed(g, deckRect(side), 0xffffff, 0.3);
     for (let i = 0; i < layers - 1; i++) {
-      g.rect(d.x, d.y - i, 16, 20).fill(hex(UI.woodDark));
-      g.rect(d.x + 1, d.y - i, 14, 1).fill(hex("#7a56a0"));
+      g.rect(d.x, d.y - i, 16, 20).fill(hex(PAL.ink));
+      g.rect(d.x + 1, d.y - i, 14, 1).fill(hex(i % 2 ? PAL.plum : PAL.mauve));
     }
     c.addChild(g);
     if (n) {
@@ -622,24 +666,19 @@ export class BoardView {
       c.addChild(top);
     }
     const count = new Sprite(tex(digitsCanvas(String(n), UI.paper)));
+    this.labels.attach(count);
     count.position.set(d.x + 18, d.y + 7);
     c.addChild(count);
     // Discard: the top card face up.
     const dr = discardRect(side);
     const topId = pl.discard[pl.discard.length - 1]?.id;
     if (topId) {
-      const def = card(topId);
-      const frame = new Graphics();
-      const col = def.kind === "monster" ? AFFINITY[def.affinity].frame : def.kind === "ambush" ? "#8a3a4a" : def.kind === "prepared" ? "#7a6236" : "#4f6aa0";
-      frame.rect(dr.x, dr.y, dr.w, dr.h).fill(hex(UI.ink));
-      frame.rect(dr.x + 1, dr.y + 1, dr.w - 2, dr.h - 2).fill(hex(col));
-      frame.rect(dr.x + 2, dr.y + 2, dr.w - 4, 26).fill(hex("#2a2438"));
-      c.addChild(frame);
-      const art = new Sprite(tex(artCanvas(topId)));
-      art.position.set(dr.x + (def.kind === "monster" ? 2 : 6), dr.y + (def.kind === "monster" ? 3 : 7));
-      c.addChild(art);
+      const top = new Sprite(tex(cardCanvas(topId, "pile")));
+      top.position.set(dr.x, dr.y);
+      c.addChild(top);
     }
     const dc = new Sprite(tex(digitsCanvas(String(pl.discard.length), UI.paper)));
+    this.labels.attach(dc);
     dc.position.set(dr.x + Math.floor((dr.w - dc.width) / 2), dr.y + dr.h + 2);
     c.addChild(dc);
     // The rival's hand: card backs.
@@ -712,7 +751,7 @@ export class BoardView {
         const n = list.length + 1;
         const cell = sigilCell(side, list.length, n);
         const from = side === "me" ? { x: 168, y: BOARD_H + 10 } : { x: 290, y: 38 };
-        const spr = new Sprite(tex(e.card ? artCanvas(e.card) : sigilCardCanvas()));
+        const spr = new Sprite(tex(e.card ? cardCanvas(e.card, "tiny") : sigilCardCanvas()));
         spr.anchor.set(0.5);
         spr.position.set(from.x, from.y);
         this.sigilLayer.addChild(spr);
@@ -926,70 +965,92 @@ export class BoardView {
     }).then(() => obj.destroy());
   }
 
-  private particles(x: number, y: number, colors: number[], n: number, spread: number, life: number, gravity: number): void {
+  /**
+   * Pixel particles. `shape` picks the sprite: square chips, puffs that swell and thin out, spark streaks that
+   * point along their flight, or 4-point twinkles. All colours come from the palette.
+   */
+  private particles(x: number, y: number, colors: number[], n: number, spread: number, life: number, gravity: number,
+    shape: "chip" | "puff" | "spark" | "twinkle" = "chip"): void {
     for (let i = 0; i < n; i++) {
-      const g = new Graphics().rect(0, 0, 2, 2).fill(colors[i % colors.length]!);
+      const col = colors[i % colors.length]!;
       const ang = (i / n) * Math.PI * 2 + (i % 3) * 0.4;
       const sp = spread * (0.5 + ((i * 37) % 10) / 20);
       const vx = Math.cos(ang) * sp, vy = Math.sin(ang) * sp - spread * 0.4;
+      const g = new Graphics();
+      if (shape === "puff") g.rect(-1, -1, 3, 2).fill(col).rect(0, -2, 1, 1).fill(col);
+      else if (shape === "spark") {
+        const len = 2 + (i % 2);
+        if (Math.abs(vx) > Math.abs(vy)) g.rect(0, 0, len, 1).fill(col); else g.rect(0, 0, 1, len).fill(col);
+      } else if (shape === "twinkle") g.rect(0, -1, 1, 3).fill(col).rect(-1, 0, 3, 1).fill(col).rect(0, 0, 1, 1).fill(0xffffff);
+      else g.rect(0, 0, 2, 2).fill(col);
       g.position.set(x, y);
       this.fx.addChild(g);
-      void this.tw(life, (k) => {
+      const life2 = life * (0.8 + ((i * 53) % 10) / 25);
+      void this.tw(life2, (k) => {
         g.position.set(R(x + vx * k), R(y + vy * k + gravity * k * k));
-        g.alpha = 1 - k;
+        g.alpha = k < 0.5 ? 1 : 1 - (k - 0.5) * 2;
+        if (shape === "puff") g.scale.set(1 + k * 0.8);
+        if (shape === "twinkle") g.visible = k < 0.7 || Math.floor(k * 20) % 2 === 0;
       }).then(() => g.destroy());
     }
   }
 
   private dust(x: number, y: number): void {
-    this.particles(x, y, [0xd9c49a, 0xb59c66, 0xf4e8c8], 10, 16, 380, 6);
+    this.particles(x, y, [hex(PAL.paper3), hex(PAL.paper2), hex(PAL.paper4)], 12, 18, 420, 4, "puff");
+    this.particles(x, y, [hex(PAL.moss3), hex(PAL.paper4)], 6, 10, 300, 10, "chip");
+    lightFlash(x, y - 10, hex(PAL.paper2), 40, 260);
   }
 
   private sparkle(x: number, y: number, color: number): void {
-    this.particles(x, y, [color, 0xffffff], 12, 20, 500, -4);
+    this.particles(x, y, [color, hex(PAL.white)], 10, 20, 560, -4, "twinkle");
+    lightFlash(x, y, color, 48, 420);
   }
 
   private impact(x: number, y: number): void {
-    this.particles(x, y, [0xffffff, 0xffe66d, 0xff6b5b], 10, 14, 260, 0);
+    this.particles(x, y, [hex(PAL.white), hex(PAL.gold4), hex(PAL.fire4), hex(PAL.fire3)], 14, 22, 320, 14, "spark");
+    this.particles(x, y, [hex(PAL.gold3)], 4, 8, 200, 0, "twinkle");
+    lightFlash(x, y, hex(PAL.fire4), 56, 220);
   }
 
   private shatter(x: number, y: number, affinity: keyof typeof AFFINITY): void {
     const pal = AFFINITY[affinity];
-    const colors = [hex(pal.frame), hex(pal.frameDark), hex(pal.body[2]), hex(pal.body[3])];
-    for (let i = 0; i < 16; i++) {
-      const w = 4 + (i % 3) * 2;
-      const g = new Graphics().rect(-w / 2, -w / 2, w, w).fill(colors[i % colors.length]!);
+    const colors = [hex(pal.frame), hex(pal.frameDark), hex(pal.body[2]), hex(pal.body[3]), hex(pal.frameLight)];
+    lightFlash(x, y, hex(pal.accentGlow), 64, 360);
+    for (let i = 0; i < 18; i++) {
+      const w = 3 + (i % 3) * 2;
+      // Triangular shards with a lit edge.
+      const g = new Graphics().poly([-w / 2, -w / 2, w / 2, -w / 2 + (i % 2), -w / 2 + (i % 3), w / 2]).fill(colors[i % colors.length]!)
+        .rect(-w / 2, -w / 2, w - 1, 1).fill(hex(pal.frameLight));
       const cx = x + ((i % 4) - 1.5) * 12, cy = y + (Math.floor(i / 4) - 1.5) * 14;
       g.position.set(R(cx), R(cy));
       this.fx.addChild(g);
-      const vx = (cx - x) * 1.2, vy = (cy - y) * 0.8 - 10;
-      void this.tw(520, (k) => {
-        g.position.set(R(cx + vx * k), R(cy + vy * k + 30 * k * k));
-        g.alpha = 1 - k;
+      const vx = (cx - x) * 1.2, vy = (cy - y) * 0.8 - 12;
+      const spin = ((i % 5) - 2) * 1.6;
+      void this.tw(560, (k) => {
+        g.position.set(R(cx + vx * k), R(cy + vy * k + 34 * k * k));
+        g.rotation = Math.round((spin * k) / (Math.PI / 4)) * (Math.PI / 4);
+        g.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
       }).then(() => g.destroy());
     }
+    this.particles(x, y, [hex(pal.accentGlow), hex(PAL.white)], 8, 18, 380, 6, "spark");
   }
 
   /** A card shown big over the board for a moment (casts, flips, Ambushes). */
   private async showCard(id: string, title: string, color: string): Promise<void> {
     const c = new Container();
     const def = card(id);
-    const g = new Graphics();
-    g.rect(-40, -34, 80, 68).fill(hex(UI.ink));
-    g.rect(-39, -33, 78, 66).fill(hex(def.kind === "ambush" ? "#8a3a4a" : def.kind === "prepared" ? "#7a6236" : "#4f6aa0"));
-    g.rect(-36, -22, 72, 38).fill(hex("#2a2438"));
-    c.addChild(g);
-    const art = new Sprite(tex(spellCanvas(def.kind)));
-    art.scale.set(2);
-    art.position.set(-16, -19);
+    const face = new Sprite(tex(cardCanvas(id, "show")));
+    face.position.set(-32, -41);
+    const shadow = new Graphics().rect(-30, -38, 64, 82).fill({ color: hex(PAL.ink), alpha: 0.45 });
     const t = label(title, color);
-    t.position.set(R(-t.width / 2), -32);
+    t.position.set(R(-t.width / 2), -53);
     const n = label(def.name.toUpperCase(), UI.paper);
-    n.position.set(R(-n.width / 2), 19);
-    c.addChild(art, t, n);
+    n.position.set(R(-n.width / 2), -40);
+    c.addChild(shadow, face, n, t);
     c.position.set(176, 108);
     this.fx.addChild(c);
     c.alpha = 0;
+    lightFlash(176, 108, hex(color), 90, 700);
     await this.tw(160, (k) => { c.alpha = k; c.scale.set(0.6 + 0.4 * ease(k)); });
     await this.wait(480);
     await this.tw(160, (k) => { c.alpha = 1 - k; });

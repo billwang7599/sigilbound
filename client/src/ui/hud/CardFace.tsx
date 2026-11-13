@@ -1,8 +1,9 @@
 import { card } from "@sigilbound/engine";
 import { useMemo } from "react";
 import { KEYWORDS, splitKeywords } from "../../core/keywords.js";
-import { AFFINITY } from "../../gfx/palette.js";
-import { artCanvas, cardBackCanvas, dataUrl } from "../../gfx/sprites.js";
+import { CARD_LAYOUT, frameColors, type R } from "../../gfx/frames.js";
+import { artCanvas, badgeCanvas, cardBackCanvas, cardBackOf, cardCanvas, dataUrl } from "../../gfx/sprites.js";
+import { CardFx } from "./CardFx.js";
 
 const KIND_LABEL: Record<string, string> = {
   monster: "Monster", quick: "Quick spell", prepared: "Prepared spell", ambush: "Ambush", hidden: "",
@@ -13,8 +14,7 @@ export function useArt(id: string): string {
 }
 
 export function frameColor(id: string): string {
-  const def = card(id);
-  return def.kind === "monster" ? AFFINITY[def.affinity].frame : def.kind === "ambush" ? "#8a3a4a" : def.kind === "prepared" ? "#7a6236" : "#4f6aa0";
+  return frameColors(card(id)).frame;
 }
 
 /** A word with a pixel tooltip explaining it (definitions in core/keywords.ts). */
@@ -38,7 +38,12 @@ export function KeywordText({ text, tips }: { text: string; tips: boolean }) {
   return <>{splitKeywords(text).map((p, i) => (p.kw ? <Kw key={i} k={p.kw}>{p.text}</Kw> : <span key={i}>{p.text}</span>))}</>;
 }
 
-/** A card as the HUD draws it: a paper card for the hand, or a big readable one for the popup. */
+const at = (r: R, s: number): React.CSSProperties => ({ position: "absolute", left: r.x * s, top: r.y * s, width: r.w * s, height: r.h * s });
+
+/**
+ * A card as the HUD draws it: a pixel card face (gfx/frames.ts) scaled by a whole number, with crisp DOM text laid
+ * over the face's rects so text, costs and ATK/DEF never blur.
+ */
 export function CardFace(props: {
   id: string;
   size?: "hand" | "big" | "mini";
@@ -48,58 +53,56 @@ export function CardFace(props: {
 }) {
   const { id, size = "hand" } = props;
   const def = card(id);
-  const art = useArt(id);
+  const L = CARD_LAYOUT[size];
+  const s = L.scale;
+  const W = L.w * s, H = L.h * s;
+  const face = useMemo(() => dataUrl(id === "hidden" ? cardBackOf(L.w, L.h) : cardCanvas(id, size)), [id, size, L.w, L.h]);
+  if (def.kind === "hidden") {
+    return <img src={face} className="pixel" style={{ width: W, height: H }} alt="card back" draggable={false} />;
+  }
   const big = size === "big";
   const mini = size === "mini";
-  const W = big ? 252 : mini ? 72 : 100, H = big ? 352 : mini ? 100 : 140;
-  if (def.kind === "hidden") {
-    return <img src={art} className="pixel" style={{ width: W, height: H }} alt="card back" draggable={false} />;
-  }
   const atk = props.atk ?? def.atk, dfn = props.def ?? def.def;
   const kindKey = def.kind === "monster" ? "monster" : def.kind;
+  const badges = (["guard", "leap", "rush", "awaken"] as const).filter((b) => b === "awaken" ? !!def.awaken : !!def[b]);
+  const shown = dfn - (props.damage ?? 0);
   return (
-    <div
-      className="relative flex flex-col text-ink"
-      style={{ width: W, height: H, background: frameColor(id), padding: big ? 8 : 4, boxShadow: "inset 0 0 0 2px #1c1a24, inset 0 0 0 4px #ffffff33" }}
-    >
-      <div className="flex items-center gap-1">
-        <span
-          className={`font-pixel ${big ? "text-[16px]" : "text-[11px]"} leading-none text-white flex items-center justify-center shrink-0`}
-          style={{ width: big ? 28 : 16, height: big ? 28 : 16, background: "#2a1a4a", boxShadow: "inset 0 0 0 1px #c9a7ff" }}
-        >{def.cost}</span>
-        <span className={`font-pixel ${big ? "text-[15px]" : mini ? "text-[7px]" : "text-[9px]"} leading-none text-white truncate`} style={{ textShadow: "1px 1px 0 #1c1a24" }}>{def.name}</span>
-      </div>
-      <div className="mt-1 flex items-center justify-center" style={{ background: "#2a2438", height: big ? 132 : mini ? 34 : 54 }}>
-        <img src={art} className="pixel" draggable={false} style={{ width: def.kind === "monster" ? (big ? 120 : mini ? 32 : 48) : (big ? 80 : mini ? 24 : 32) }} alt="" />
-      </div>
-      {mini ? null : (
-        <div className={`paper mt-1 flex-1 ${big ? "px-2.5 py-2 text-[21px] leading-[1.05]" : "px-1.5 py-1 text-[13px] leading-[0.95]"}`}>
-          <div className={`font-pixel ${big ? "text-[10px] mb-1" : "text-[8px]"} opacity-75 uppercase`}>
-            {big ? <Kw k={kindKey}>{KIND_LABEL[def.kind]}</Kw> : KIND_LABEL[def.kind]}
-            {def.kind === "monster" ? ` · ${def.affinity}` : ""}
+    <CardFx id={id} size={size === "big" ? "big" : "hand"} enabled={size !== "mini"}>
+      <div className="relative text-ink card-face" style={{ width: W, height: H }}>
+        <img src={face} className="pixel absolute inset-0" style={{ width: W, height: H }} alt="" draggable={false} />
+        {L.cost ? (
+          <span className={`absolute font-pixel leading-none text-white flex items-center justify-center ${big ? "text-[15px]" : mini ? "text-[8px]" : "text-[10px]"}`}
+            style={{ ...at(L.cost, s), textShadow: "1px 1px 0 #14121c, -1px 0 0 #14121c, 0 -1px 0 #14121c" }}>{def.cost}</span>
+        ) : null}
+        {L.name ? (
+          <span className={`absolute font-pixel leading-none text-paper truncate flex items-center ${big ? "text-[14px]" : mini ? "text-[7px]" : "text-[9px]"}`}
+            style={{ ...at(L.name, s), textShadow: "1px 1px 0 #14121c" }}>{def.name}</span>
+        ) : null}
+        {L.text && !mini ? (
+          <div className={`absolute overflow-hidden ${big ? "px-2 py-1.5 text-[20px] leading-[1.02]" : "px-1 py-0.5 text-[13px] leading-[0.95]"}`} style={at(L.text, s)}>
+            <div className={`font-pixel ${big ? "text-[10px] mb-1" : "text-[7px]"} uppercase flex items-center gap-1`} style={{ color: "#6b4226" }}>
+              {big ? <Kw k={kindKey}>{KIND_LABEL[def.kind]}</Kw> : KIND_LABEL[def.kind]}
+              {def.kind === "monster" ? <span className="opacity-80">· {def.affinity}</span> : null}
+              {badges.map((b) => (
+                <img key={b} src={dataUrl(badgeCanvas(b))} className="pixel inline-block" style={{ width: big ? 14 : 7 }} alt={b} />
+              ))}
+            </div>
+            <div className={big ? "" : "line-clamp-2"}>
+              {def.text ? <KeywordText text={def.text} tips={big} /> : def.kind === "monster" ? "—" : ""}
+            </div>
           </div>
-          <div className={big ? "" : "line-clamp-3"}>
-            {def.text ? <KeywordText text={def.text} tips={big} /> : def.kind === "monster" ? "—" : ""}
-          </div>
-        </div>
-      )}
-      {def.kind === "monster" ? (
-        <div className={`absolute font-pixel bg-ink px-1 leading-tight ${big ? "bottom-3 right-3 text-[18px]" : mini ? "bottom-1 right-1 text-[9px]" : "bottom-1 right-1 text-[10px]"}`}>
-          {big ? (
-            <>
-              <Kw k="atk"><span className="text-[#ffb35c]">{atk}</span></Kw>
-              <span className="text-white">/</span>
-              <Kw k="def"><span className={props.damage ? "text-target" : "text-[#9fd3ff]"}>{dfn - (props.damage ?? 0)}</span></Kw>
-            </>
-          ) : (
-            <>
-              <span className="text-[#ffb35c]">{atk}</span>
-              <span className="text-white">/</span>
-              <span className={props.damage ? "text-target" : "text-[#9fd3ff]"}>{dfn - (props.damage ?? 0)}</span>
-            </>
-          )}
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+        {def.kind === "monster" && L.atk && L.def ? (
+          <>
+            <span className={`absolute font-pixel leading-none flex items-center justify-center ${big ? "text-[16px]" : "text-[10px]"}`} style={{ ...at(L.atk, s), color: "#ffe08a", textShadow: "1px 1px 0 #14121c" }}>
+              {big ? <Kw k="atk">{atk}</Kw> : atk}
+            </span>
+            <span className={`absolute font-pixel leading-none flex items-center justify-center ${big ? "text-[16px]" : "text-[10px]"}`} style={{ ...at(L.def, s), color: props.damage ? "#ff6b5b" : "#d6f6ff", textShadow: "1px 1px 0 #14121c" }}>
+              {big ? <Kw k="def">{shown}</Kw> : shown}
+            </span>
+          </>
+        ) : null}
+      </div>
+    </CardFx>
   );
 }
