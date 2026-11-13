@@ -134,7 +134,6 @@ export type GameEvent =
   | { t: "bounce"; p: PlayerId; lane: number; card: string }
   | { t: "buff"; p: PlayerId; lane: number; atk: number; def: number }
   | { t: "revive"; p: PlayerId; lane: number; card: string }
-  | { t: "shatter"; p: PlayerId; lane: number }
   | { t: "restDraw"; p: PlayerId }
   | { t: "endTurn"; p: PlayerId }
   | { t: "gameOver"; winner: PlayerId; reason: string };
