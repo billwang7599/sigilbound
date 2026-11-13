@@ -65,7 +65,10 @@ export function describeEvent(e: GameEvent, me: PlayerId): string | null {
   const who = (p: PlayerId) => (p === me ? "You" : "Rival");
   const whose = (p: PlayerId) => (p === me ? "your" : "Rival's");
   switch (e.t) {
-    case "start": return `Duel begins. ${who(e.first)} go${e.first === me ? "" : "es"} first. The place: ${FIELDS[e.fields[1]!].name}.`;
+    case "start": {
+      const place = e.fields[1] ? ` The place: ${FIELDS[e.fields[1]].name}.` : "";
+      return `Duel begins. ${who(e.first)} go${e.first === me ? "" : "es"} first.${place}`;
+    }
     case "mulligan": return e.count ? `${who(e.p)} mulligan${e.p === me ? "" : "s"} ${e.count}.` : null;
     case "turn": return `— Turn ${e.turn}: ${e.p === me ? "your" : "Rival's"} turn —`;
     case "draw": return e.p === me && e.card ? `You draw ${name(e.card)}.` : null;

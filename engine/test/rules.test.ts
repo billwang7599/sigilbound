@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  apply, atkOf, attackTargets, createGame, DECKS, defOf, eventsFor, IllegalActionError, legalActions, viewFor,
+  apply, atkOf, attackTargets, card, createGame, DECKS, defOf, eventsFor, IllegalActionError, legalActions, viewFor,
 } from "../src/index.js";
 import { blank, give, put, run, setSigils, toAttack } from "./helpers.js";
 
@@ -91,7 +91,7 @@ test("Leap may hit directly over a monster, but not in Deep Lake or past a Guard
   assert.deepEqual(attackTargets(s, 0, 0), [{ kind: "monster", lane: 0 }, { kind: "direct" }]);
   s.fields[0] = "deep_lake";
   assert.deepEqual(attackTargets(s, 0, 0), [{ kind: "monster", lane: 0 }]);
-  s.fields[0] = "crossroads";
+  s.fields[0] = null;
   put(s, 1, 1, "pebblekin", "def");
   assert.deepEqual(attackTargets(s, 0, 0), [{ kind: "monster", lane: 1 }]);
 });
@@ -226,4 +226,34 @@ test("viewFor hides the opponent's hand, Sigils, set spells, every deck and the 
 
   const ev = eventsFor([{ t: "draw", p: 1, card: "snap_trap", uid: 5 }, { t: "draw", p: 0, card: "spark", uid: 6 }], 0);
   assert.deepEqual(ev, [{ t: "draw", p: 1 }, { t: "draw", p: 0, card: "spark", uid: 6 }]);
+});
+
+test("viewFor lists your own remaining deck as a sorted multiset, never in draw order", () => {
+  const s = blank();
+  const v = viewFor(s, 0);
+  const ids = s.players[0].deck.map((c) => c.id);
+  assert.deepEqual([...v.deckList].sort(), [...ids].sort(), "the same cards, with counts");
+  const costs = v.deckList.map((id) => card(id).cost);
+  assert.deepEqual(costs, [...costs].sort((a, b) => a - b), "sorted by cost");
+  // Shuffling the real deck changes nothing the viewer sees.
+  const t = structuredClone(s);
+  t.players[0].deck.reverse();
+  assert.deepEqual(viewFor(t, 0).deckList, v.deckList);
+  assert.ok(viewFor(s, 1).deckList.every((id) => s.players[1].deck.some((c) => c.id === id)), "only your own deck");
+});
+
+test("a default duel has plain lanes; fields come back with the setup option", () => {
+  const plain = createGame({ seed: 3, decks: [DECKS.ember_rush!, DECKS.deepwall!], first: 0 });
+  assert.deepEqual(plain.state.fields, [null, null, null]);
+  assert.deepEqual(plain.events[0], { t: "start", first: 0, fields: [null, null, null] });
+  const withFields = createGame({ seed: 3, decks: [DECKS.ember_rush!, DECKS.deepwall!], first: 0, fields: true });
+  assert.equal(withFields.state.fields[0], "volcano");
+  assert.equal(withFields.state.fields[2], "deep_lake");
+  // A Fire monster gets no Volcano bonus on a plain lane.
+  const s = blank();
+  s.fields = [null, null, null];
+  put(s, 0, 0, "cinderpup");
+  assert.equal(atkOf(s, 0, 0), 3);
+  s.fields[0] = "volcano";
+  assert.equal(atkOf(s, 0, 0), 4);
 });

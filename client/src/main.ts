@@ -12,11 +12,14 @@ const net = new Net({
   onError: (m) => controller.onError(m),
   onStatus: (c) => controller.onStatus(c),
 });
-controller = new Controller(ui, net, async (host, c) => {
+controller = new Controller(ui, net, async (host) => {
   // Pixi text uses the pixel font, so wait for it before drawing.
   await document.fonts.load("8px Silkscreen").catch(() => undefined);
-  return BoardView.create(host, { clickSlot: (s) => c.clickSlot(s), hover: (h) => c.hover(h) });
+  return BoardView.create(host);
 });
 ui.app.set({ hasSaved: !!net.saved() });
 mountUi(document.getElementById("ui")!, { ui, actions: controller });
 net.connect();
+
+// Dev only: lets a browser console (or a test driver) check the board against the state.
+if (import.meta.env.DEV) (window as unknown as { __sigilbound: unknown }).__sigilbound = { ui, controller };

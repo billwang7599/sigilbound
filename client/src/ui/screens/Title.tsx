@@ -1,4 +1,4 @@
-import { DECKS, FIELDS, CRESTS, type DeckChoice } from "@sigilbound/engine";
+import { DECKS, CRESTS, type DeckChoice } from "@sigilbound/engine";
 import { useMemo } from "react";
 import { dataUrl, monsterCanvas } from "../../gfx/sprites.js";
 import { useGame } from "../context.js";
@@ -14,12 +14,15 @@ function DeckButton({ deck }: { deck: DeckChoice }) {
   const d = DECKS[deck]!;
   const art = useMemo(() => dataUrl(monsterCanvas(BLURB[deck].mascot)), [deck]);
   return (
+    <div className="flex flex-col items-center gap-2">
     <button className="paper p-4 w-[300px] flex flex-col items-center gap-2 hover:-translate-y-1 transition-transform text-ink" onClick={() => actions.newDuel(deck)}>
       <img src={art} className="pixel" style={{ width: 96 }} alt="" />
       <div className="font-pixel text-[14px]">{d.name}</div>
       <div className="text-[16px] leading-tight text-center">{BLURB[deck].plan}</div>
-      <div className="text-[14px] opacity-70">Home: {FIELDS[d.home].name} · Crest: {CRESTS[d.crest].name}</div>
+      <div className="text-[14px] opacity-70">Crest: {CRESTS[d.crest].name}</div>
     </button>
+    <button className="btn !text-[10px]" onClick={() => actions.showDeckList(deck)}>View deck (30 cards)</button>
+    </div>
   );
 }
 

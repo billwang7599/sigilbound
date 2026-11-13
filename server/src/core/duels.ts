@@ -9,7 +9,7 @@ import {
 import type { DuelRecord, Ports } from "./ports.js";
 
 /** How long the AI "thinks" before each kind of move, so a human can follow along. */
-export const AI_DELAY = { mulligan: 400, move: 700, window: 900 };
+export const AI_DELAY = { mulligan: 400, move: 1100, window: 900 };
 
 export class DuelError extends Error {}
 

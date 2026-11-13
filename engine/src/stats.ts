@@ -10,7 +10,7 @@ export const MOVE_COST = 1;
 
 export const other = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 export const adjacent = (a: number, b: number): boolean => Math.abs(a - b) === 1;
-export const field = (s: GameState, lane: number): FieldId => s.fields[lane]!;
+export const field = (s: GameState, lane: number): FieldId | null => s.fields[lane] ?? null;
 
 export function untapped(s: GameState, p: PlayerId): number {
   return s.players[p].sigils.filter((x) => !x.tapped).length;

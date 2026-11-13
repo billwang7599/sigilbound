@@ -21,14 +21,26 @@ Open http://localhost:5173, pick a deck, and play the AI (it plays the other dec
   all card data in `engine/src/cards.ts`.
 - `server/`: hexagonal. `core/` (duels, AI turns, Ambush timers) talks to the world only through `core/ports.ts`.
   Outlets: `ws/` (game socket, Zod-validated), `api/` (health), `db/` (in-memory store for now). `main.ts` wires them.
-- `client/`: Vite + React 19 + Tailwind 4 for the HUD, PixiJS 8 for the board. The board is drawn at 240×216 and
-  scaled by a whole number with nearest sampling. All art is generated in code (`client/src/gfx/`).
+- `client/`: Vite + React 19 + Tailwind 4 for the HUD, PixiJS 8 for the board. The board is drawn at 336×216 and
+  scaled by a whole number with nearest sampling (shrinking below 1× only when the window is tiny). All art is generated in code (`client/src/gfx/`).
 
 ## Playing
 
-Click a card in your hand or a monster/spell on the board. The side panel lists what it can do, and the slots it
-can reach glow; click a glowing slot or a menu item. To attack: **Attack ⚔**, click your monster, then its target (click the rival's
-bar for a direct hit). When the rival attacks and you have untapped Sigils, an Ambush prompt appears for 3 seconds.
+- **Drag** a hand card onto the board: a monster onto one of your lanes (then pick Attack or Defense on the slot), a
+  Prepared spell onto a spell slot, a targeted spell onto its target, any other spell anywhere on the lanes, or any card
+  onto your **Sigil row** (left) to bind it. Legal places glow while you drag.
+- **Drag** one of your monsters onto an enemy (or the rival's corner, top right) to attack, even from the Main step,
+  or onto a lane next to it to move. Right-click your monster to switch its position.
+- **Click** any card (hand, board, Sigils, deck or discard lists) for a big readable popup. Hover the underlined
+  keywords for what they mean (all definitions live in `client/src/core/keywords.ts`). A hand card's popup offers
+  lane and position buttons and Bind; your monster's popup offers Attack, Switch position, Crest and Move.
+- **Piles:** your deck (top-left of your Sigil row) opens a list of what's left in it, grouped and sorted by cost,
+  never in draw order. Discard piles (right) list their cards.
+- **Keyboard:** ← → along the hand, 1–9 opens a card, ↑/Tab to your monsters, Enter opens, inside a popup 1/2/3 lane,
+  A/D position, B bind, Enter confirm, Esc back. E ends the turn, P passes an Ambush window, L shows the log, ? lists
+  everything.
+
+Lanes are plain for now: fields are off by default (`createGame({ fields: true })` turns them back on).
 
 Dev notes: duels live in memory, so restarting the server ends them. If file changes don't hot-reload, run with
 `VITE_POLL=1`; `VITE_CACHE_DIR` moves Vite's cache if `node_modules` is read-only.

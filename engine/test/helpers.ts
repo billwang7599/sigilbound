@@ -2,13 +2,13 @@ import {
   apply, createGame, DECKS, type Action, type GameEvent, type GameState, type Monster, type PlayerId, type Position,
 } from "../src/index.js";
 
-/** A game past the mulligan: player 0's main step on turn 3, empty boards and hands, 5 Sigils each, Crossroads everywhere. */
+/** A game past the mulligan: player 0's main step on turn 3, empty boards and hands, 5 Sigils each, plain lanes. */
 export function blank(): GameState {
   const s = createGame({ seed: 7, decks: [DECKS.ember_rush!, DECKS.deepwall!], first: 0 }).state;
   s.step = "main";
   s.turn = 3;
   s.active = 0;
-  s.fields = ["crossroads", "crossroads", "crossroads"];
+  s.fields = [null, null, null];
   for (const pl of s.players) {
     pl.deck.push(...pl.hand);
     pl.hand = [];

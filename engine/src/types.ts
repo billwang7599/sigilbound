@@ -79,8 +79,11 @@ export interface GameState {
   first: PlayerId;
   step: Step;
   players: [PlayerState, PlayerState];
-  /** Lane fields: [first player's home, center place, second player's home]. */
-  fields: FieldId[];
+  /**
+   * Lane fields: [first player's home, center place, second player's home], or null for a plain lane. Plain by
+   * default for now; `createGame({ fields: true })` turns them back on.
+   */
+  fields: (FieldId | null)[];
   window: PendingWindow | null;
   /** Bumps every time a window opens, so a timer can tell windows apart. */
   windowSeq: number;
@@ -107,7 +110,7 @@ export type Action =
 
 /** What happened, for logs and animation. `card` is removed by `eventsFor` when the viewer shouldn't see it. */
 export type GameEvent =
-  | { t: "start"; first: PlayerId; fields: FieldId[] }
+  | { t: "start"; first: PlayerId; fields: (FieldId | null)[] }
   | { t: "mulligan"; p: PlayerId; count: number }
   | { t: "turn"; p: PlayerId; turn: number }
   | { t: "draw"; p: PlayerId; card?: string; uid?: number }
