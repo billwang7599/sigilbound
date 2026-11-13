@@ -292,3 +292,75 @@ export function badgeCanvas(kind: keyof typeof BADGES): HTMLCanvasElement {
 export function dataUrl(c: HTMLCanvasElement): string {
   return c.toDataURL();
 }
+
+/** A Sigil: a small face-down card with a gem, 12×16. */
+export function sigilCardCanvas(): HTMLCanvasElement {
+  return cached("sigcard", () => {
+    const [c, ctx] = canvas(12, 16);
+    ctx.fillStyle = UI.ink;
+    ctx.fillRect(0, 0, 12, 16);
+    ctx.fillStyle = "#4a2f6e";
+    ctx.fillRect(1, 1, 10, 14);
+    ctx.fillStyle = "#6a4796";
+    ctx.fillRect(2, 2, 8, 12);
+    const gem = ["..#..", ".#a#.", "#aab#", ".#b#.", "..#.."];
+    const col: Record<string, string> = { "#": "#2a1a4a", a: "#e2ccff", b: "#a57ae6" };
+    gem.forEach((row, y) => [...row].forEach((ch, x) => {
+      if (!col[ch]) return;
+      ctx.fillStyle = col[ch]!;
+      ctx.fillRect(3 + x, 5 + y, 1, 1);
+    }));
+    return c;
+  });
+}
+
+/** A tiny card back for the rival's hand, 8×10. */
+export function tinyBackCanvas(): HTMLCanvasElement {
+  return cached("tinyback", () => {
+    const [c, ctx] = canvas(8, 10);
+    ctx.fillStyle = UI.woodDark;
+    ctx.fillRect(0, 0, 8, 10);
+    ctx.fillStyle = "#5a3a7a";
+    ctx.fillRect(1, 1, 6, 8);
+    ctx.fillStyle = UI.gold;
+    ctx.fillRect(3, 3, 2, 4);
+    return c;
+  });
+}
+
+/** The plain lane surface: a muted, seamless 32×32 tile (fields are off for now). */
+export function laneTileCanvas(): HTMLCanvasElement {
+  return cached("lane", () => {
+    const S = 32;
+    const [c, ctx] = canvas(S, S);
+    ctx.fillStyle = "#6f9a48";
+    ctx.fillRect(0, 0, S, S);
+    const rand = seeded("lane");
+    const specks = ["#638c40", "#7ca852", "#5d843b", "#86b05a"];
+    for (let i = 0; i < 60; i++) {
+      ctx.fillStyle = specks[Math.floor(rand() * specks.length)]!;
+      ctx.fillRect(Math.floor(rand() * S), Math.floor(rand() * S), 1 + Math.floor(rand() * 2), 1);
+    }
+    return c;
+  });
+}
+
+/** The wooden table edge around the lanes, 32×32. */
+export function tableTileCanvas(): HTMLCanvasElement {
+  return cached("table", () => {
+    const S = 32;
+    const [c, ctx] = canvas(S, S);
+    ctx.fillStyle = "#4a3324";
+    ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 8) {
+      ctx.fillStyle = "#3d2a1d";
+      ctx.fillRect(0, y, S, 1);
+      ctx.fillStyle = "#563c2a";
+      ctx.fillRect(0, y + 1, S, 1);
+    }
+    const rand = seeded("table");
+    ctx.fillStyle = "#3d2a1d";
+    for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(rand() * S), Math.floor(rand() * S), 3, 1);
+    return c;
+  });
+}

@@ -1,39 +1,54 @@
+import { useRef } from "react";
+import { plansFor } from "../../core/intent.js";
 import { useGame } from "../context.js";
-import { optionsFor } from "../../core/selection.js";
 import { useStore } from "../useStore.js";
 import { CardFace } from "./CardFace.js";
 
+/** Your hand: fanned along the bottom; hover or keyboard focus lifts a card. Drag to play, click to read. */
 export function Hand() {
   const { ui, actions } = useGame();
   const update = useStore(ui.duel, (d) => d.update);
-  const selection = useStore(ui.duel, (d) => d.selection);
-  const mulligan = useStore(ui.duel, (d) => d.mulligan);
+  const hand = useStore(ui.duel, (d) => d.hand);
+  const inFlight = useStore(ui.duel, (d) => d.inFlight);
+  const focus = useStore(ui.duel, (d) => d.focus);
+  const drag = useStore(ui.duel, (d) => d.drag);
+  const popup = useStore(ui.duel, (d) => d.popup);
+  // When each card first showed up, so new ones play the draw-in animation (and keep it across re-renders).
+  const born = useRef(new Map<number, number>());
+  const lastDuel = useRef<string | undefined>(undefined);
+  if (lastDuel.current !== update?.duelId) { lastDuel.current = update?.duelId; born.current = new Map(); }
+  const cards = hand.filter((c) => !inFlight.includes(c.uid));
+  const now = performance.now();
+  for (const c of cards) if (!born.current.has(c.uid)) born.current.set(c.uid, now);
+  const fresh = new Set(cards.filter((c) => now - born.current.get(c.uid)! < 450).map((c) => c.uid));
   if (!update) return null;
-  const s = update.view.state;
-  const me = update.view.you;
-  const hand = s.players[me].hand;
-  const mulliganing = s.step === "mulligan" && !s.players[me].mulliganDone;
+  const n = cards.length;
+  const spread = Math.min(84, n > 1 ? 560 / (n - 1) : 0);
   return (
-    <div className="h-[158px] shrink-0 flex items-end justify-center gap-2 px-4 pb-2 overflow-x-auto">
-      {hand.map((c) => {
-        const playable = optionsFor({ kind: "hand", uid: c.uid }, update.legal).length > 0;
-        const selected = selection?.kind === "hand" && selection.uid === c.uid;
-        const marked = mulligan.includes(c.uid);
-        return (
-          <button
-            key={c.uid}
-            className={`shrink-0 transition-transform duration-75 ${selected ? "-translate-y-3" : "hover:-translate-y-1"} ${playable && !selected ? "glow" : ""}`}
-            style={{ outline: selected ? "2px solid white" : undefined, opacity: marked ? 0.45 : 1 }}
-            onClick={() => (mulliganing ? actions.toggleMulligan(c.uid) : actions.select(selected ? null : { kind: "hand", uid: c.uid }))}
-            onMouseEnter={() => actions.hover({ id: c.id })}
-            onMouseLeave={() => actions.hover(null)}
-          >
-            <CardFace id={c.id} />
-            {marked ? <div className="font-pixel text-[9px] text-target -mt-4 relative">↺ back</div> : null}
-          </button>
-        );
-      })}
-      {!hand.length ? <span className="opacity-50 self-center">Your hand is empty.</span> : null}
+    <div className="absolute inset-x-0 bottom-0 h-[150px] pointer-events-none z-[5]">
+      <div className="relative h-full">
+        {cards.map((c, i) => {
+          const off = i - (n - 1) / 2;
+          const playable = plansFor({ kind: "hand", uid: c.uid }, update).some((p) => p.action.type !== "bind");
+          const focused = focus?.area === "hand" && focus.index === i;
+          const open = popup?.src.kind === "hand" && popup.src.uid === c.uid;
+          const x = Math.round(off * spread), rot = off * 3, y = Math.round(Math.abs(off) * Math.abs(off) * 2.5);
+          return (
+            <div
+              key={c.uid}
+              className={`hand-card absolute bottom-[-24px] left-1/2 pointer-events-auto ${focused || open ? "lifted" : ""} ${fresh.has(c.uid) ? "draw-in" : ""}`}
+              style={{ "--x": `${x - 50}px`, "--y": `${y}px`, "--r": `${rot}deg`, zIndex: focused || open ? 50 : 10 + i, touchAction: "none" } as React.CSSProperties}
+              onPointerDown={(e) => { e.preventDefault(); actions.handPointerDown(c.uid, e); }}
+            >
+              <div className={`card-inner ${playable ? "playable" : ""} ${focused ? "focus-ring" : ""} ${drag ? "" : "hoverable"}`}>
+                <CardFace id={c.id} />
+                <span className="absolute -top-2 -left-2 font-pixel text-[9px] bg-ink text-paper-dark px-1">{i + 1}</span>
+              </div>
+            </div>
+          );
+        })}
+        {!n ? <span className="absolute bottom-6 left-1/2 -translate-x-1/2 opacity-50">Your hand is empty.</span> : null}
+      </div>
     </div>
   );
 }

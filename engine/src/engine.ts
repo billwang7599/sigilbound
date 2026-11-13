@@ -25,12 +25,14 @@ export interface NewGame {
   decks: [DeckDef, DeckDef];
   /** Who goes first; a coin flip from the seed if left out. */
   first?: PlayerId;
+  /** Lane fields (homes and a random center place). Off by default: every lane is plain. */
+  fields?: boolean;
 }
 
 export function createGame(opts: NewGame): ApplyResult {
   const s = { rng: opts.seed >>> 0, nextUid: 1 };
   const first: PlayerId = opts.first ?? (randInt(s, 2) as PlayerId);
-  const center = CENTER_POOL[randInt(s, CENTER_POOL.length)]!;
+  const center = opts.fields ? CENTER_POOL[randInt(s, CENTER_POOL.length)]! : null;
   const players = opts.decks.map((deck): PlayerState => {
     const ids = deckList(deck);
     shuffle(s, ids);
@@ -45,7 +47,7 @@ export function createGame(opts: NewGame): ApplyResult {
   }) as [PlayerState, PlayerState];
   const state: GameState = {
     v: 1, rng: s.rng, nextUid: s.nextUid, turn: 0, active: first, first, step: "mulligan", players,
-    fields: [opts.decks[first].home, center, opts.decks[other(first)].home],
+    fields: opts.fields ? [opts.decks[first].home, center, opts.decks[other(first)].home] : [null, null, null],
     window: null, windowSeq: 0, winner: null, endReason: null,
   };
   const events: Events = [{ t: "start", first, fields: [...state.fields] }];
