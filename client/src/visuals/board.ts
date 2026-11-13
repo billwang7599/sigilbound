@@ -17,7 +17,7 @@ import { PostFx } from "./shaders/index.js";
 import { lightFlash, type Light } from "./shaders/lights.js";
 import { AFFINITY, PAL, UI } from "../gfx/palette.js";
 import {
-  badgeCanvas, cardBackCanvas, cardCanvas, monsterCanvas, sigilCardCanvas, spellCanvas, tinyBackCanvas,
+  badgeCanvas, cardBackCanvas, cardCanvas, monsterCanvas, monsterFlash, monsterPose, sigilCardCanvas, spellCanvas, tinyBackCanvas,
 } from "../gfx/sprites.js";
 
 export const BOARD_W = 336;
@@ -50,6 +50,15 @@ function tex(c: HTMLCanvasElement): Texture {
 
 const hex = (s: string) => parseInt(s.replace("#", "").slice(0, 6), 16);
 const ease = (k: number) => 1 - (1 - k) * (1 - k);
+/** Ease out with a little overshoot (pops, landings). */
+const overshoot = (k: number) => { const c = 1.7; return 1 + (c + 1) * (k - 1) ** 3 + c * (k - 1) ** 2; };
+const easeInOut = (k: number) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+/** The idle loop: frame per time in a 1.2 s breath (hold, in, hold, out). */
+const IDLE_MS = 1200;
+function idleFrame(t: number): string {
+  const q = t % IDLE_MS;
+  return q < 380 ? "idle0" : q < 560 ? "idle1" : q < 960 ? "idle2" : "idle3";
+}
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const R = Math.round;
 
@@ -135,6 +144,14 @@ class MonsterView {
   position: "atk" | "def";
   /** Keyword badges drawn on the card, with their spot relative to the holder (for hover tooltips). */
   badges: { kw: string; x: number; y: number }[] = [];
+  /** An action pose held over the idle loop ("attack", "hit", "flash"), or null to breathe. */
+  pose: string | null = null;
+  private shownFrame = "idle0";
+  setFrame(name: string): void {
+    if (name === this.shownFrame || this.art.destroyed) return;
+    this.shownFrame = name;
+    this.art.texture = tex(name === "flash" ? monsterFlash(this.id) : monsterPose(this.id, name));
+  }
   constructor(readonly uid: number, readonly id: string, readonly side: Side, position: "atk" | "def") {
     // A soft drop shadow toward the bottom right (the light is top left); it turns with the card.
     this.shadow = new Graphics();
@@ -219,6 +236,14 @@ export class BoardView {
   private lpShown: Record<Side, number | null> = { me: null, opp: null };
   private deckShown: Record<Side, number> = { me: 0, opp: 0 };
   private lpSprites: Record<Side, Container> = { me: new Container(), opp: new Container() };
+  /** Whose turn it is (a pulsing gold frame on that side's LP plaque), and its graphics. */
+  private activeSide: Side | null = null;
+  private readonly turnMark = new Graphics();
+  private readonly lpFlash: Record<Side, Graphics> = { me: new Graphics(), opp: new Graphics() };
+  private frozenUntil = 0;
+  private shakeUntil = 0;
+  private shakeAmp = 0;
+  private shakeDur = 1;
   /** 1 = normal speed; smaller is faster; 0 = instant. */
   speed = 1;
   private me: PlayerId = 0;
@@ -235,6 +260,14 @@ export class BoardView {
     app.ticker.add((t) => {
       this.time += t.deltaMS;
       const now = performance.now();
+      // Screen shake: whole board pixels only, so the art stays on the pixel grid.
+      if (now < this.shakeUntil) {
+        const a = Math.ceil(this.shakeAmp * (this.shakeUntil - now) / this.shakeDur);
+        const ph = Math.floor(now / 33);
+        app.stage.position.set(ph % 2 ? a : -a, ph % 3 === 0 ? -Math.min(1, a) : 0);
+      } else if (app.stage.x || app.stage.y) app.stage.position.set(0, 0);
+      // Hit-stop: tweens hold still for a beat on a big hit.
+      if (now < this.frozenUntil) { this.post.update(t.deltaMS); return; }
       const keep: Tween[] = [];
       for (const tw of this.tweens) {
         if (now < tw.t0) { keep.push(tw); continue; }
@@ -244,12 +277,14 @@ export class BoardView {
         else keep.push(tw);
       }
       this.tweens = keep;
-      // Idle: monsters breathe (a 1px bob, out of step with each other); shadows turn with their cards.
+      // Idle: monsters breathe through their 4 idle frames (out of step with each other) unless an action pose
+      // is held; shadows turn with their cards.
       for (const v of this.monsters.values()) {
         if (v.holder.destroyed) continue;
         v.shadow.rotation = v.body.rotation;
-        v.art.y = v.artY + (Math.floor((this.time + v.uid * 211) / 520) % 2 ? 1 : 0);
+        v.setFrame(v.pose ?? idleFrame(this.time + v.uid * 377));
       }
+      this.drawTurnMark();
       this.marks.alpha = 0.7 + 0.3 * Math.sin(this.time / 160);
       this.post.update(t.deltaMS);
     });
@@ -309,11 +344,12 @@ export class BoardView {
       const h = v.holder;
       if (h.destroyed || h.alpha < 0.05) continue;
       const aff = card(v.id).affinity;
-      const glow = aff === "fire" ? { color: hex(PAL.fire4), radius: 58, intensity: 0.85 * flicker }
-        : aff === "water" ? { color: hex(PAL.tide3), radius: 50, intensity: 0.62 }
-          : aff === "earth" ? { color: hex(PAL.moss3), radius: 36, intensity: 0.3 }
-            : { color: hex(PAL.gale3), radius: 42, intensity: 0.36 };
-      out.push({ x: h.x, y: h.y - 6, ...glow, intensity: glow.intensity * h.alpha });
+      // Lights sit at the card's lower edge, so they spill onto the felt around it rather than bleaching the art.
+      const glow = aff === "fire" ? { color: hex(PAL.fire4), radius: 50, intensity: 0.6 * flicker }
+        : aff === "water" ? { color: hex(PAL.tide3), radius: 44, intensity: 0.42 }
+          : aff === "earth" ? { color: hex(PAL.moss3), radius: 34, intensity: 0.26 }
+            : { color: hex(PAL.gale3), radius: 38, intensity: 0.3 };
+      out.push({ x: h.x, y: h.y + 26, ...glow, intensity: glow.intensity * h.alpha });
     }
     for (const side of ["me", "opp"] as const) {
       for (const sv of this.sigils[side]) {
@@ -549,7 +585,37 @@ export class BoardView {
     rival.position.set(280, 2);
     this.bg.addChild(sig, sig2, you, rival);
     this.labels.attach(sig, sig2, you, rival);
-    this.piles.addChild(this.lpSprites.me, this.lpSprites.opp);
+    this.piles.addChild(this.lpFlash.me, this.lpFlash.opp, this.lpSprites.me, this.lpSprites.opp);
+    this.scene.addChild(this.turnMark);
+  }
+
+  /** A gold frame that breathes around the LP plaque of whoever's turn it is. */
+  private drawTurnMark(): void {
+    const g = this.turnMark;
+    g.clear();
+    const side = this.activeSide;
+    if (!side) return;
+    const at = LP_AT[side];
+    const r = { x: at.x - 5, y: at.y - 5, w: 56, h: 31 };
+    const on = Math.floor(this.time / 450) % 2 === 0;
+    border(g, r, hex(UI.gold), on ? 1 : 0.6);
+    border(g, { x: r.x - 1, y: r.y - 1, w: r.w + 2, h: r.h + 2 }, hex(PAL.ink), 0.6);
+  }
+
+  /** Whose turn it is now (the controller calls this as the turn banner starts, so the two agree). */
+  markTurn(p: PlayerId | null): void {
+    this.activeSide = p === null ? null : this.sideOf(p);
+  }
+
+  /** Big hits: hold every tween still for a moment and/or shake the board a pixel or two. */
+  private impactFeel(stopMs: number, shakePx: number, shakeMs = 220): void {
+    if (this.speed === 0) return;
+    const now = performance.now();
+    if (stopMs > 0 && this.speed >= 0.9) {
+      for (const tw of this.tweens) tw.t0 += stopMs;
+      this.frozenUntil = Math.max(this.frozenUntil, now + stopMs);
+    }
+    if (shakePx > 0) { this.shakeUntil = now + shakeMs; this.shakeAmp = shakePx; this.shakeDur = shakeMs; }
   }
 
   // ---- reconciling with a state ----
@@ -577,6 +643,7 @@ export class BoardView {
    */
   sync(s: GameState, me: PlayerId): void {
     this.me = me;
+    this.activeSide = s.step === "over" || s.step === "mulligan" ? null : this.sideOf(s.active);
     for (const o of diff(this.shown(), wanted(s, me))) {
       if (o.op === "removeMonster") this.removeMonster(o.key, "fade");
       else if (o.op === "addMonster") {
@@ -649,6 +716,7 @@ export class BoardView {
       h.alpha = 1;
       h.scale.set(1);
       h.position.set(c.x, c.y);
+      v.pose = null;
       v.body.rotation = v.position === "def" ? Math.PI / 2 : 0;
       v.overlay.alpha = 1;
       if (h.parent !== this.monsterLayer) this.monsterLayer.addChild(h);
@@ -776,6 +844,16 @@ export class BoardView {
     // Discard: the top card face up.
     const dr = discardRect(side);
     const topId = pl.discard[pl.discard.length - 1]?.id;
+    // Cards under the top one peek out, a pixel lower and to the right each, so a thick pile looks thick.
+    const under = Math.min(3, Math.max(0, pl.discard.length - 1));
+    if (under) {
+      const sg = new Graphics();
+      for (let i = under; i >= 1; i--) {
+        sg.rect(dr.x + i, dr.y + i, dr.w, dr.h).fill(hex(PAL.ink));
+        sg.rect(dr.x + i, dr.y + i, dr.w - 1, dr.h - 1).fill(hex(i % 2 ? PAL.paper3 : PAL.paper4));
+      }
+      c.addChild(sg);
+    }
     if (topId) {
       const top = new Sprite(tex(cardCanvas(topId, "pile")));
       top.position.set(dr.x, dr.y);
@@ -818,11 +896,19 @@ export class BoardView {
     this.lpShown[side] = lp;
     const c = this.lpSprites[side];
     const x0 = LP_AT[side].x;
+    const loss = lp < from;
     let last = from;
-    return this.tw(Math.min(600, 60 * Math.abs(lp - from)), (k) => {
-      const v = R(lerp(from, lp, k));
+    // The plaque flashes red (loss) or green (gain) and fades; big losses shake the board.
+    const fl = this.lpFlash[side];
+    const at = LP_AT[side];
+    fl.clear().rect(at.x - 3, at.y - 3, 52, 27).fill({ color: hex(loss ? UI.red : UI.green) });
+    fl.alpha = 0.55;
+    if (loss && from - lp >= 3) this.impactFeel(0, from - lp >= 5 ? 2 : 1, 260);
+    void this.tw(520, (k) => { fl.alpha = 0.55 * (1 - ease(k)); });
+    return this.tw(Math.min(640, 70 * Math.abs(lp - from)), (k) => {
+      const v = R(lerp(from, lp, ease(k)));
       if (v !== last) { last = v; this.drawLp(side, v); }
-      c.x = x0 + (k < 1 ? (Math.floor(k * 20) % 2 ? 1 : -1) : 0);
+      c.x = x0 + (loss && k < 1 ? (Math.floor(k * 20) % 2 ? 1 : -1) : 0);
     });
   }
 
@@ -834,6 +920,9 @@ export class BoardView {
     if (this.speed === 0) return;
     const side = "p" in e ? this.sideOf(e.p) : "me";
     switch (e.t) {
+      case "turn":
+        this.activeSide = side;
+        return;
       case "draw": {
         this.deckShown[side] = Math.max(0, this.deckShown[side] - 1);
         this.drawPiles(next, side);
@@ -978,18 +1067,31 @@ export class BoardView {
           : { x: a.x, y: side === "me" ? 4 : BOARD_H - 4 };
         const back = { x: a.x - (b.x - a.x) * 0.08, y: a.y - (b.y - a.y) * 0.08 };
         this.monsterLayer.addChild(h); // on top
-        await this.tw(120, (k) => { h.position.set(R(lerp(a.x, back.x, ease(k))), R(lerp(a.y, back.y, ease(k)))); });
-        await this.tw(110, (k) => { h.position.set(R(lerp(back.x, lerp(a.x, b.x, 0.6), k * k)), R(lerp(back.y, lerp(a.y, b.y, 0.6), k * k))); });
+        v.pose = "attack";
+        // Wind up (eased), lunge (accelerating), impact, then settle home with a small overshoot.
+        await this.tw(140, (k) => { h.position.set(R(lerp(a.x, back.x, easeInOut(k))), R(lerp(a.y, back.y, easeInOut(k)))); });
+        const hitAt = { x: lerp(a.x, b.x, 0.6), y: lerp(a.y, b.y, 0.6) };
+        await this.tw(100, (k) => { h.position.set(R(lerp(back.x, hitAt.x, k * k * k)), R(lerp(back.y, hitAt.y, k * k * k))); });
         this.impact(R(lerp(a.x, b.x, 0.75)), R(lerp(a.y, b.y, 0.75)));
-        void this.tw(200, (k) => { h.position.set(R(lerp(lerp(a.x, b.x, 0.6), a.x, ease(k))), R(lerp(lerp(a.y, b.y, 0.6), a.y, ease(k)))); });
-        await this.wait(60);
+        this.impactFeel(50, e.target.kind === "monster" ? 1 : 2, 180);
+        void this.tw(240, (k) => {
+          h.position.set(R(lerp(hitAt.x, a.x, overshoot(k))), R(lerp(hitAt.y, a.y, overshoot(k))));
+          if (k > 0.5 && !h.destroyed) v.pose = null;
+        });
+        await this.wait(70);
         return;
       }
       case "damage": {
         const v = this.monsters.get(`${side}:${e.lane}`);
         const c = this.centre(side, e.lane);
         this.floatText(`-${e.amount}`, UI.target, c.x, c.y - 6, true);
-        if (v) await this.shake(v.holder, c.x);
+        if (e.amount >= 3) this.impactFeel(60, 1, 160);
+        if (v) {
+          v.pose = "flash";
+          void this.wait(70).then(() => { if (v.pose === "flash") v.pose = "hit"; });
+          await this.shake(v.holder, c.x);
+          if (v.pose === "hit" || v.pose === "flash") v.pose = null;
+        }
         return;
       }
       case "destroyed": {
@@ -998,10 +1100,14 @@ export class BoardView {
         if (!v) return;
         this.monsters.delete(key);
         const h = v.holder;
-        await this.tw(140, (k) => {
-          v.art.tint = Math.floor(k * 6) % 2 ? 0xffffff : 0xff7766;
+        v.pose = "hit";
+        // Flicker hit/white, swell a touch, then burst.
+        await this.tw(180, (k) => {
+          v.pose = Math.floor(k * 6) % 2 ? "flash" : "hit";
+          h.scale.set(1 + 0.06 * ease(k));
           h.alpha = 1;
         });
+        this.impactFeel(80, 2, 240);
         this.shatter(h.x, h.y, card(e.card).affinity);
         h.destroy({ children: true });
         await this.wait(200);
@@ -1060,10 +1166,18 @@ export class BoardView {
     const isDigits = digits && /^[-+0-9 /]+$/.test(text);
     const obj: Container = isDigits ? new Sprite(tex(digitsCanvas(text.replace(/ /g, ""), color))) : label(text, color);
     if (isDigits) obj.scale.set(2);
-    obj.position.set(R(x - obj.width / 2), R(y));
+    const w2 = obj.width / 2;
+    obj.position.set(R(x - w2), R(y));
     this.fx.addChild(obj);
     const y0 = obj.y;
+    // Numbers pop in one size bigger (whole-pixel scales only), then rise and fade.
+    if (isDigits) obj.scale.set(3);
     void this.tw(900, (k) => {
+      if (isDigits) {
+        const s = k < 0.12 ? 3 : 2;
+        if (obj.scale.x !== s) obj.scale.set(s);
+        obj.x = R(x - (obj.width / 2));
+      }
       obj.y = R(y0 - 14 * ease(k));
       obj.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
     }).then(() => obj.destroy());

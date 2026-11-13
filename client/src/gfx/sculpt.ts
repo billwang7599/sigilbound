@@ -44,6 +44,17 @@ export const stroke = (pts: number[], color: string, onlyOnBody = true): Stroke 
   return { pts: v, color, onlyOnBody };
 };
 
+const rgbCache = new Map<string, [number, number, number]>();
+function rgbOf(col: string): [number, number, number] {
+  let v = rgbCache.get(col);
+  if (!v) {
+    const h = col.replace("#", "");
+    v = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    rgbCache.set(col, v);
+  }
+  return v;
+}
+
 /** Light comes from the top left and a little toward the viewer. */
 const LIGHT = (() => { const l = [-0.5, -0.66, 0.56]; const n = Math.hypot(...l); return l.map((x) => x / n) as [number, number, number]; })();
 
@@ -129,17 +140,24 @@ export function render(sc: Sculpture, size: number, unit = 48): HTMLCanvasElemen
     }
   }
   const at = (x: number, y: number) => (x < 0 || y < 0 || x >= size || y >= size ? -1 : part[y * size + x]!);
-  const put = (x: number, y: number, col: string) => { ctx.fillStyle = col; ctx.fillRect(x, y, 1, 1); };
+  // Pixels go straight into an ImageData (one fillRect per pixel was the slow part of building a card).
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+  const put = (x: number, y: number, col: string, a = 255) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return;
+    const [r, g, b] = rgbOf(col);
+    const o = (y * size + x) * 4;
+    data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = a;
+  };
 
   // Ground shadow first, dithered so it stays pixel art.
   if (sc.shadow) {
     const [cx, cy, rx] = sc.shadow.map((v) => v * k) as [number, number, number];
     const ry = Math.max(1.5, rx * 0.28);
-    ctx.fillStyle = "rgba(10,8,16,0.45)";
     for (let y = Math.floor(cy - ry); y <= cy + ry; y++) {
       for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
         const d = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2;
-        if (d <= 1 && (d < 0.55 || (x + y) % 2 === 0)) ctx.fillRect(x, y, 1, 1);
+        if (d <= 1 && (d < 0.55 || (x + y) % 2 === 0)) put(x, y, "#0a0810", 115);
       }
     }
   }
@@ -148,9 +166,13 @@ export function render(sc: Sculpture, size: number, unit = 48): HTMLCanvasElemen
     for (let x = 0; x < size; x++) {
       const i = at(x, y);
       if (i < 0) {
-        // 1px coloured outline around the silhouette (darkest step of the neighbour's ramp).
-        const n = [at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1)].find((v) => v >= 0);
-        if (n !== undefined) put(x, y, RAMPS[sc.prims[n]!.mat][0]);
+        // 1px outline around the silhouette, "selective": on the lit top-left it's the darkest step of the
+        // neighbour's own ramp, on the shadowed bottom-right it's near-black ink. Shapes read as solid and lit.
+        const right = at(x + 1, y), below = at(x, y + 1), left = at(x - 1, y), above = at(x, y - 1);
+        const n = [right, below, left, above].find((v) => v >= 0);
+        if (n === undefined) continue;
+        const shadowSide = (left >= 0 || above >= 0) && right < 0 && below < 0;
+        put(x, y, shadowSide ? PAL.ink : RAMPS[sc.prims[n]!.mat][0]);
         continue;
       }
       const p = sc.prims[i]!;
@@ -164,6 +186,8 @@ export function render(sc: Sculpture, size: number, unit = 48): HTMLCanvasElemen
         if (behind !== undefined) s = 0;
         else if (below >= 0 && below < i && sc.prims[below]!.mat === p.mat) s = Math.min(s, 1);
       }
+      // Form shadow: the body's own bottom-right rim steps one shade darker, so rounded parts look rounded.
+      if (s > 1 && (at(x + 1, y) < 0 && at(x, y + 1) < 0)) s -= 1;
       put(x, y, ramp[s]!);
     }
   }
@@ -184,5 +208,50 @@ export function render(sc: Sculpture, size: number, unit = 48): HTMLCanvasElemen
     for (let j = s > 2 ? 1 : 0; j < s; j++) for (let i = 0; i < Math.ceil(s / 2); i++) put(px + i, ey + j, PAL.ink);
   }
   for (const [x, y, col] of sc.pixels ?? []) put(Math.round(x * k), Math.round(y * k), col);
+  ctx.putImageData(img, 0, 0);
   return c;
 }
+
+/**
+ * A pose of a sculpture, for animation frames: everything above the feet sinks by `breathe` (a breath), the
+ * tallest parts (ears, flames, leaves, crests) sway by `sway`, and the whole body leans by `lean` (forward is +x,
+ * the way art faces). Feet stay planted. Things with no feet on the ground (fish, floaters) bob as a whole.
+ */
+export interface Pose { breathe?: number; sway?: number; lean?: number }
+
+export function posed(sc: Sculpture, pose: Pose): Sculpture {
+  const b = pose.breathe ?? 0, sw = pose.sway ?? 0, ln = pose.lean ?? 0;
+  if (!b && !sw && !ln) return sc;
+  const bottom = Math.max(...sc.prims.map((p) => (p.k === "ell" ? p.cy + p.ry : p.k === "poly" ? Math.max(...p.pts.map((q) => q[1])) : Math.max(p.a[1], p.b[1]) + p.w0 / 2)));
+  const grounded = bottom >= 40;
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const mv = ([x, y]: Vec): Vec => {
+    const w = grounded ? clamp((41 - y) / 9) : 1;
+    const tip = clamp((24 - y) / 12);
+    const lean = ln * clamp((44 - y) / 30);
+    return [x + lean + sw * tip, y + b * w];
+  };
+  const prims = sc.prims.map((p): Prim => {
+    if (p.k === "ell") { const [cx, cy] = mv([p.cx, p.cy]); return { ...p, cx, cy }; }
+    if (p.k === "poly") return { ...p, pts: p.pts.map(mv) };
+    return { ...p, a: mv(p.a), b: mv(p.b) };
+  });
+  return {
+    ...sc,
+    prims,
+    eyes: sc.eyes?.map((e) => { const [x, y] = mv([e.x, e.y]); return { ...e, x, y }; }),
+    strokes: sc.strokes?.map((s) => ({ ...s, pts: s.pts.map(mv) })),
+    pixels: sc.pixels?.map(([x, y, c]) => { const [nx, ny] = mv([x, y]); return [nx, ny, c] as [number, number, string]; }),
+    shadow: sc.shadow ? [sc.shadow[0] + ln * 0.3, sc.shadow[1], sc.shadow[2]] : undefined,
+  };
+}
+
+/** The named poses the board uses: a 4-frame idle loop, an attack lunge and a hit recoil. */
+export const POSES: Record<string, Pose> = {
+  idle0: {},
+  idle1: { breathe: 0.6, sway: 0.5 },
+  idle2: { breathe: 1.2, sway: 1 },
+  idle3: { breathe: 0.6, sway: 0.4 },
+  attack: { lean: 4, breathe: -1, sway: 1.5 },
+  hit: { lean: -3, breathe: 1, sway: -1 },
+};

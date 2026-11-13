@@ -195,7 +195,7 @@ export function TopBar() {
     : !mine ? `Rival's turn${s.step === "attack" ? " · attacking" : ""}` : s.step === "attack" ? "Your attack step" : "Your turn · Main";
   const crest = CRESTS[pl.crest];
   return (
-    <div className="absolute inset-x-0 top-0 h-[40px] flex items-center gap-1 px-2 z-20 pointer-events-none">
+    <div className="u-tl absolute left-0 top-0 h-[36px] flex items-center gap-1 px-2 z-20 pointer-events-none">
       <div className="flex gap-1 pointer-events-auto">
         <button className="btn !text-[9px]" onClick={() => actions.leave()}>Menu</button>
         <button className="btn !text-[9px]" onClick={() => { if (confirm("Concede this duel?")) actions.act({ type: "concede" }); }}>Concede</button>
@@ -233,7 +233,7 @@ export function TurnDock() {
   const tide = legal.find((a) => a.type === "crest" && a.lane === undefined);
   const hint = mine && s.step === "main" ? (pl.bound ? "Sigil bound this turn." : "No bind yet: you'll draw 1 extra at the end.") : "";
   return (
-    <div className="absolute left-2 bottom-2 z-[6] flex flex-col gap-1.5 w-[176px]">
+    <div className="u-bl absolute left-2 bottom-2 z-[6] flex flex-col gap-1.5 w-[168px]">
       {mine ? (
         <>
           {hint ? <div className="text-[14px] leading-tight hud-strip px-1.5 py-0.5">{hint}</div> : null}
@@ -276,8 +276,8 @@ export function Toast() {
   const toast = useStore(ui.duel, (d) => d.toast);
   if (!toast) return null;
   return (
-    <div key={toast.id} className="absolute top-[48px] left-1/2 -translate-x-1/2 panel px-4 py-2 text-[18px] z-40 pop-in pointer-events-none">
-      {toast.text}
+    <div className="absolute top-[calc(var(--top-h)+8px)] inset-x-0 flex justify-center z-40 pointer-events-none">
+      <div className="u-t"><div key={toast.id} className="panel px-4 py-2 text-[18px] pop-in">{toast.text}</div></div>
     </div>
   );
 }

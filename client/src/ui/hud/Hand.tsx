@@ -3,6 +3,7 @@ import { plansFor } from "../../core/intent.js";
 import { useGame } from "../context.js";
 import { useStore } from "../useStore.js";
 import { CardFace } from "./CardFace.js";
+import { uiScale } from "../layout.js";
 
 /** How long a hand card is hovered before its big preview shows. */
 const PREVIEW_MS = 450;
@@ -40,11 +41,11 @@ export function Hand() {
   const fresh = new Set(cards.filter((c) => now - born.current.get(c.uid)! < 450).map((c) => c.uid));
   if (!update) return null;
   const n = cards.length;
-  const room = Math.max(200, width - 2 * SIDE_ROOM - 100);
+  const room = Math.max(200, width / uiScale() - 2 * SIDE_ROOM - 100);
   const spread = Math.min(84, n > 1 ? room / (n - 1) : 0);
   const mulligan = update.view.state.step === "mulligan";
   return (
-    <div className="absolute inset-x-0 bottom-0 h-[150px] pointer-events-none z-[5]">
+    <div className="u-bc absolute bottom-0 h-[150px] pointer-events-none z-[5]">
       <div className="relative h-full">
         {cards.map((c, i) => {
           const off = i - (n - 1) / 2;

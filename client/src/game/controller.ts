@@ -185,6 +185,9 @@ export class Controller implements UiActions {
         const e = u.events[i] as GameEvent;
         board.speed = speedNow();
         const quiet = board.speed === 0;
+        // Your hand's keyboard focus doesn't carry into the rival's turn (a lifted card would hide your spell row).
+        if (e.t === "turn" && e.p !== me && this.ui.duel.get().focus?.area === "hand") this.setFocus(null);
+        if (e.t === "turn") board.markTurn(e.p);
         if (e.t === "turn" && !fresh && !(quiet && e.p !== me)) {
           this.ui.duel.set({ banner: { id: ++bannerId, text: e.p === me ? "Your turn" : "Rival's turn", tone: e.p === me ? "me" : "opp" } });
           await board.wait(700);

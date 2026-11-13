@@ -57,17 +57,49 @@ function seeded(text: string): () => number {
   };
 }
 
+/**
+ * A small pixel canvas. Pixel writes go into an ImageData buffer (a fillRect per pixel was most of the cost of
+ * building a card face); reading `c` or `g` writes the buffer back first, so callers can mix both freely.
+ */
 export class Px {
-  readonly c: HTMLCanvasElement;
-  readonly g: CanvasRenderingContext2D;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D;
+  private buf: ImageData | null = null;
   constructor(readonly w: number, readonly h: number) {
-    this.c = document.createElement("canvas");
-    this.c.width = w;
-    this.c.height = h;
-    this.g = this.c.getContext("2d")!;
-    this.g.imageSmoothingEnabled = false;
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.ctx = this.canvas.getContext("2d", { willReadFrequently: true })!;
+    this.ctx.imageSmoothingEnabled = false;
   }
-  rect(x: number, y: number, w: number, h: number, col: string): this { this.g.fillStyle = col; this.g.fillRect(x, y, w, h); return this; }
+  get c(): HTMLCanvasElement { this.flush(); return this.canvas; }
+  get g(): CanvasRenderingContext2D { this.flush(); return this.ctx; }
+  private flush(): void {
+    if (this.buf) { this.ctx.putImageData(this.buf, 0, 0); this.buf = null; }
+  }
+  rect(x: number, y: number, w: number, h: number, col: string): this {
+    const rgba = parseHex(col);
+    if (!rgba) { this.g.fillStyle = col; this.g.fillRect(x, y, w, h); return this; }
+    this.buf ??= this.ctx.getImageData(0, 0, this.w, this.h);
+    const d = this.buf.data;
+    const [r, g, b, a] = rgba;
+    const x0 = Math.max(0, Math.round(x)), y0 = Math.max(0, Math.round(y));
+    const x1 = Math.min(this.w, Math.round(x + w)), y1 = Math.min(this.h, Math.round(y + h));
+    for (let yy = y0; yy < y1; yy++) {
+      for (let xx = x0; xx < x1; xx++) {
+        const o = (yy * this.w + xx) * 4;
+        if (a === 255) { d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255; continue; }
+        // Source-over, like fillRect with a translucent colour.
+        const sa = a / 255, da = d[o + 3]! / 255, oa = sa + da * (1 - sa);
+        if (oa <= 0) continue;
+        d[o] = (r * sa + d[o]! * da * (1 - sa)) / oa;
+        d[o + 1] = (g * sa + d[o + 1]! * da * (1 - sa)) / oa;
+        d[o + 2] = (b * sa + d[o + 2]! * da * (1 - sa)) / oa;
+        d[o + 3] = oa * 255;
+      }
+    }
+    return this;
+  }
   px(x: number, y: number, col: string): this { return this.rect(x, y, 1, 1, col); }
   /** Raised (light top-left) or sunken (dark top-left) 1px bevel inside r. */
   bevel(r: R, light: string, dark: string, sunken = false): this {
@@ -76,11 +108,15 @@ export class Px {
     this.rect(r.x, r.y + r.h - 1, r.w, 1, b).rect(r.x + r.w - 1, r.y, 1, r.h, b);
     return this;
   }
-  /** A vertical two-colour gradient, ordered-dithered so it stays pixel art. */
+  /**
+   * A vertical two-colour gradient: solid bands with a short dithered seam between them, so it stays pixel art
+   * without the all-over checker grain a full-height dither gives (that read as noise behind the art once scaled up).
+   */
   gradient(r: R, top: string, bottom: string): this {
     for (let y = 0; y < r.h; y++) {
       const t = r.h <= 1 ? 0 : y / (r.h - 1);
-      for (let x = 0; x < r.w; x++) this.px(r.x + x, r.y + y, bayer(r.x + x, r.y + y) < t ? bottom : top);
+      const k = Math.max(0, Math.min(1, (t - 0.38) / 0.24));
+      for (let x = 0; x < r.w; x++) this.px(r.x + x, r.y + y, k >= 1 ? bottom : k <= 0 ? top : bayer(r.x + x, r.y + y) < k ? bottom : top);
     }
     return this;
   }
@@ -97,7 +133,18 @@ export function frameColors(def: CardDef): FrameColors {
 function motif(p: Px, r: R, def: CardDef): void {
   const rand = seeded(def.id);
   const key = def.kind === "monster" ? def.affinity : def.kind;
-  const n = Math.max(3, Math.floor((r.w * r.h) / 90));
+  // A soft spotlight behind the art (lighter oval, dithered rim): silhouettes read against it at any size.
+  {
+    const cx = r.x + r.w / 2, cy = r.y + r.h * 0.5, rx = r.w * 0.46, ry = r.h * 0.44;
+    const lit = frameColors(def).backdrop[1];
+    for (let y = r.y; y < r.y + r.h; y++) {
+      for (let x = r.x; x < r.x + r.w; x++) {
+        const d = ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2;
+        if (d < 0.7 || (d < 1 && bayer(x, y) < (1 - d) / 0.3)) p.px(x, y, lit);
+      }
+    }
+  }
+  const n = Math.max(2, Math.floor((r.w * r.h) / 150));
   const inR = (x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
   for (let i = 0; i < n; i++) {
     const x = r.x + Math.floor(rand() * r.w), y = r.y + Math.floor(rand() * r.h);
@@ -136,6 +183,22 @@ function plate(p: Px, r: R, kind: "atk" | "def"): void {
 
 function corner(p: Px, x: number, y: number, col: string, hi: string): void {
   p.px(x, y, col).px(x + 1, y, col).px(x, y + 1, col).px(x, y, hi);
+}
+
+const hexCache = new Map<string, [number, number, number, number] | null>();
+/** "#rgb", "#rrggbb" or "#rrggbbaa" → rgba bytes; anything else (named colours, rgba()) → null. */
+function parseHex(col: string): [number, number, number, number] | null {
+  let v = hexCache.get(col);
+  if (v !== undefined) return v;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(col);
+  if (!m) v = null;
+  else {
+    let h = m[1]!;
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    v = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), h.length === 8 ? parseInt(h.slice(6, 8), 16) : 255];
+  }
+  hexCache.set(col, v);
+  return v;
 }
 
 const faces = new Map<string, HTMLCanvasElement>();
