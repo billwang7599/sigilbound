@@ -1,0 +1,12 @@
+{
+  "name": "@sigilbound/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "tsx src/main.ts",
+    "check:layers": "tsx scripts/check-layers.ts"
+  },
+  "dependencies": { "@sigilbound/engine": "*", "ws": "^8.18.0", "zod": "^4.0.0" },
+  "devDependencies": { "@types/ws": "^8.18.0" }
+}
