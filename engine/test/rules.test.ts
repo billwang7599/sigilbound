@@ -257,3 +257,14 @@ test("a default duel has plain lanes; fields come back with the setup option", (
   s.fields[0] = "volcano";
   assert.equal(atkOf(s, 0, 0), 4);
 });
+
+test("a targeted cast names its target in the event (for the client's reveal arrow); it's public to both players", () => {
+  const s = blank();
+  put(s, 1, 2, "flarekit"); // 1/2
+  const u = give(s, 0, "spark");
+  const { events } = run(s, [0, { type: "cast", uid: u, target: { side: 1, lane: 2 } }]);
+  const cast = events.find((e) => e.t === "cast");
+  assert.deepEqual(cast, { t: "cast", p: 0, card: "spark", target: { side: 1, lane: 2 } });
+  assert.ok(events.some((e) => e.t === "destroyed" && e.p === 1 && e.lane === 2));
+  assert.deepEqual(eventsFor(events, 1).find((e) => e.t === "cast"), cast, "the rival sees the spell and its target");
+});

@@ -6,6 +6,30 @@ export interface LogLine {
   id: number;
   text: string;
   tone: "mine" | "theirs" | "turn" | "plain";
+  /** The card the line is about (clicking the line shows it). */
+  card?: string;
+  /** A play (summon, spell, Ambush, bind, set): drawn stronger than its effects. */
+  play?: boolean;
+}
+
+/** The rival's play, shown big over the board before it goes where it's going. */
+export interface Reveal {
+  n: number;
+  id: string;
+  caption: string;
+  /** Board keys (visuals/board.ts) it flies from and to. */
+  from: string;
+  to: string;
+  phase: "in" | "out";
+}
+
+/** How the rival's moves play back. */
+export type Playback = "normal" | "decision" | "turn";
+
+export interface Settings {
+  /** Fast-forward the rival's turns until you have a decision. */
+  autoSkip: boolean;
+  aiSpeed: "normal" | "fast";
 }
 
 /** What a card popup shows: something with choices (a Source), or just a card to read. */
@@ -24,6 +48,9 @@ export interface Popup {
   /** Index of the keyboard-highlighted option per dim. */
   cursor: Partial<Record<Dim, number>>;
 }
+
+/** The thing under the pointer on the board: a slot key, and the keyword badge if the pointer is on one. */
+export interface Hover { key: string; kw: string | null }
 
 /** After a drop on a monster slot with both positions legal: ask attack or defense right on the slot. */
 export interface Ask {
@@ -55,7 +82,19 @@ export interface DuelState {
   inFlight: number[];
   log: LogLine[];
   logOpen: boolean;
+  /** The selected card and the choices it's offering (an action menu beside it). */
   popup: Popup | null;
+  /** A card shown big for reading (I / Space, or clicking a card you can't act with). */
+  inspect: PopupSrc | null;
+  /** What the pointer is over on the board (shows a keyword info box beside it). */
+  hover: Hover | null;
+  /** A hand card hovered long enough to show its big preview. */
+  handHover: number | null;
+  reveal: Reveal | null;
+  playback: Playback;
+  settings: Settings;
+  /** A short message, e.g. what the rival did while you skipped. */
+  toast: { id: number; text: string } | null;
   ask: Ask | null;
   pile: { kind: "deck" } | { kind: "discard"; side: "me" | "opp" } | null;
   drag: { id: string; x: number; y: number; over: boolean } | null;
@@ -68,10 +107,29 @@ export interface DuelState {
   windowEndsAt: number | null;
 }
 
+const SETTINGS_KEY = "sigilbound.settings";
+
+export function loadSettings(): Settings {
+  const fallback: Settings = { autoSkip: false, aiSpeed: "normal" };
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return fallback;
+    const v = JSON.parse(raw) as Partial<Settings>;
+    return { autoSkip: v.autoSkip === true, aiSpeed: v.aiSpeed === "fast" ? "fast" : "normal" };
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveSettings(s: Settings): void {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* private mode */ }
+}
+
 export class UiState {
   readonly app = new Store<AppState>({ screen: "title", connected: false, error: null, hasSaved: false, popup: null, deckList: null });
   readonly duel = new Store<DuelState>({
-    update: null, hand: [], inFlight: [], log: [], logOpen: false, popup: null, ask: null, pile: null, drag: null,
+    update: null, hand: [], inFlight: [], log: [], logOpen: false, popup: null, inspect: null, hover: null, handHover: null,
+    reveal: null, playback: "normal", settings: loadSettings(), toast: null, ask: null, pile: null, drag: null,
     focus: null, banner: null, confirmEnd: null, help: false, mulligan: [], windowEndsAt: null,
   });
 }
@@ -84,6 +142,12 @@ export interface UiActions {
   act(a: Action): void;
   send(p: Plan, handUid?: number): void;
   openPopup(src: PopupSrc): void;
+  /** Show a card big for reading, or close the reading view (null). */
+  inspect(src: PopupSrc | null): void;
+  hoverHand(uid: number | null): void;
+  /** Skip the rival's playback: this move, until you must decide, or to the end of its turn. */
+  skip(mode: "move" | "decision" | "turn"): void;
+  setSettings(patch: Partial<Settings>): void;
   closePopup(): void;
   popupConfirm(): void;
   popupPlansOf(p: Popup): Plan[];

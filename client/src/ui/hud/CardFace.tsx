@@ -1,5 +1,6 @@
 import { card } from "@sigilbound/engine";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { KEYWORDS, splitKeywords } from "../../core/keywords.js";
 import { AFFINITY } from "../../gfx/palette.js";
 import { artCanvas, cardBackCanvas, dataUrl } from "../../gfx/sprites.js";
@@ -17,18 +18,58 @@ export function frameColor(id: string): string {
   return def.kind === "monster" ? AFFINITY[def.affinity].frame : def.kind === "ambush" ? "#8a3a4a" : def.kind === "prepared" ? "#7a6236" : "#4f6aa0";
 }
 
-/** A word with a pixel tooltip explaining it (definitions in core/keywords.ts). */
-export function Kw({ k, children }: { k: string; children: React.ReactNode }) {
-  const kw = KEYWORDS[k];
+/**
+ * A word with a pixel tooltip explaining it (definitions in core/keywords.ts). The tip is portalled to <body> and
+ * kept on screen, so a card's clipped text box or the window edge never cuts it off.
+ */
+export function Kw({ k, children, className = "kw", tip }: {
+  k: string; children: React.ReactNode; className?: string; tip?: { name: string; text: string };
+}) {
+  const kw = tip ?? KEYWORDS[k];
+  const ref = useRef<HTMLSpanElement>(null);
+  const [at, setAt] = useState<DOMRect | null>(null);
   if (!kw) return <>{children}</>;
+  const show = () => { if (ref.current) setAt(ref.current.getBoundingClientRect()); };
+  const hide = () => setAt(null);
   return (
-    <span className="kw" tabIndex={0}>
+    <span ref={ref} className={className} tabIndex={0} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
-      <span className="kw-tip" role="tooltip">
-        <span className="font-pixel text-[10px] text-gold block mb-0.5">{kw.name}</span>
-        {kw.text}
-      </span>
+      {at ? <KwTip name={kw.name} text={kw.text} at={at} /> : null}
     </span>
+  );
+}
+
+function KwTip({ name, text, at }: { name: string; text: string; at: DOMRect }) {
+  const W = 250;
+  const left = Math.max(6, Math.min(window.innerWidth - W - 6, at.left + at.width / 2 - W / 2));
+  const above = at.top > 140;
+  const style: React.CSSProperties = above
+    ? { left, bottom: window.innerHeight - at.top + 6, width: W }
+    : { left, top: at.bottom + 6, width: W };
+  return createPortal(
+    <span className="kw-tip" role="tooltip" style={style}>
+      <span className="font-pixel text-[10px] text-gold block mb-0.5">{name}</span>
+      {text}
+    </span>,
+    document.body,
+  );
+}
+
+/** Each keyword on a card with its one-line meaning, so nobody has to hunt for the word. */
+export function KeywordList({ keys, hot, className = "" }: { keys: string[]; hot?: string | null; className?: string }) {
+  if (!keys.length) return null;
+  return (
+    <div className={`flex flex-col gap-1 ${className}`}>
+      {keys.map((k) => {
+        const kw = KEYWORDS[k];
+        if (!kw) return null;
+        return (
+          <div key={k} className={`text-[15px] leading-[1.05] ${hot === k ? "bg-gold/25 outline outline-1 outline-gold" : ""} px-1`}>
+            <span className="font-pixel text-[9px] text-gold mr-1 uppercase">{kw.name}</span>{kw.text}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -79,7 +120,7 @@ export function CardFace(props: {
             {def.kind === "monster" ? ` · ${def.affinity}` : ""}
           </div>
           <div className={big ? "" : "line-clamp-3"}>
-            {def.text ? <KeywordText text={def.text} tips={big} /> : def.kind === "monster" ? "—" : ""}
+            {def.text ? <KeywordText text={def.text} tips={!mini} /> : def.kind === "monster" ? "—" : ""}
           </div>
         </div>
       )}

@@ -33,4 +33,5 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
   z.object({ t: z.literal("new"), deck: z.enum(["ember_rush", "deepwall"]) }).strict(),
   z.object({ t: z.literal("resume"), duelId: id, token: id }).strict(),
   z.object({ t: z.literal("act"), duelId: id, action: actionSchema }).strict(),
+  z.object({ t: z.literal("hurry"), duelId: id, until: z.enum(["decision", "turn"]) }).strict(),
 ]);

@@ -213,7 +213,7 @@ function perform(s: GameState, p: PlayerId, a: Action, events: Events): void {
     case "cast": {
       const c = takeFromHand(pl, a.uid);
       pay(s, p, card(c.id).cost);
-      events.push({ t: "cast", p, card: c.id });
+      events.push({ t: "cast", p, card: c.id, ...(a.target ? { target: { ...a.target } } : {}) });
       quickSpell(s, p, c.id, a.target, events);
       pl.discard.push(c);
       checkDeaths(s, events);
