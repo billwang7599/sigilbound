@@ -1,0 +1,24 @@
+{
+  "name": "sigilbound",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "engine",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c yellow,cyan \"npm run dev -w @sigilbound/server\" \"npm run dev -w @sigilbound/client\"",
+    "typecheck": "tsc -p engine && tsc -p engine/test && tsc -p server && tsc -p server/test && tsc -p client && tsc -p client/test && npm run check:layers --silent -w @sigilbound/server",
+    "test": "tsx --test 'engine/test/**/*.test.ts' 'server/test/**/*.test.ts' 'client/test/**/*.test.ts'",
+    "sim": "tsx engine/scripts/sim.ts",
+    "balance": "tsx engine/scripts/balance.ts",
+    "art:chibi": "tsx client/test/tools/chibi-sheet.ts"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0",
+    "tsx": "^4.20.0",
+    "concurrently": "^9.0.0",
+    "@types/node": "^24.0.0"
+  }
+}
