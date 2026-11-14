@@ -1,9 +1,19 @@
-# Sigilbound Rules — draft v0.6 (paper prototype)
+# Sigilbound Rules — draft v0.7 (paper prototype)
 
 All numbers are starting guesses to test on paper. Names in the sample cards are placeholders until the theme is set.
 Everything here must be playable at a real table with cards, one life tracker per player, and a few small dice.
 
-**Changes from v0.5:**
+**Changes from v0.6:**
+- **The first player skips their draw on turn 1** (section 4). Skipping their first attack did nothing on its own,
+  since no monster can attack the turn it enters. In 500 AI-vs-AI mirror games the first player won 64%; with the
+  skipped draw it's 46–52%.
+- No card changes. AI-vs-AI sims still have Ember Rush beating Deepwall about 9 games in 10; see section 15 for the
+  numbers and the options.
+- Keyword text shortened (section 8). Each keyword now says only what it does; how keywords meet (Guard vs Leap,
+  several Guards) moved to short notes under the table. No rule changed.
+- A 3-copy deck limit was tested in sims (section 15). The limit is still **2** until decided.
+
+**Changes from v0.5 to v0.6:**
 - New section 12, **Game phases and deck types:** your Sigil count is the clock (early 1–3, mid 4–5, late 6+), and
   decks lean toward one phase: Aggro, Midrange or Control.
 - Two new first-set keywords: **Awaken N** (bonus if you have N+ Sigils when you play it) and **Rush** (+2 ATK while
@@ -81,7 +91,7 @@ You         [spell][mon]  [spell][mon]  [spell][mon]     Your Sigil row
 2. Each player shuffles and draws **5 cards**.
 3. **Mulligan, once:** put any number of cards from your hand on the bottom of your deck, draw that many, then shuffle.
 4. The second player draws **1 extra card** to make up for going second.
-5. **The first player skips their attack step on turn 1.**
+5. **The first player skips their draw and their attack step on turn 1.**
 
 ## 5. Sigils (resources)
 
@@ -171,18 +181,20 @@ written here so the rules are ready for later sets and campaign content; they're
 
 | Keyword | Meaning |
 |---|---|
-| **Awaken N** | When you play this from your hand, if you have **N or more Sigils** (tapped or not), it gets the listed bonus (for example "Awaken 5: +2/+2"). The bonus lasts while it stays on the board. Monsters that enter play any other way (e.g. Second Wind) don't Awaken. |
-| **Rush** | **+2 ATK while you have 3 or fewer Sigils** (tapped or not). Checked all the time, so it turns off the moment you bind your 4th. |
+| **Awaken N** | If you have N or more Sigils when you play this from your hand, it gets the listed bonus. |
+| **Rush** | +2 ATK while you have 3 or fewer Sigils. |
 | **Swift** *(later set)* | Can attack the turn it enters play. |
-| **Leap** | When it attacks, you may hit the opponent directly even if a monster is across, unless a Guard pulls the attack. |
-| **Guard** | **Only works while this monster is in defense position.** Enemy monsters in **this lane and adjacent lanes** that attack must attack this monster (Leap included). In the center it pulls from all 3 lanes; on an edge, from 2. |
-| **Trample** *(later set)* | When it destroys a defense-position monster, the opponent loses LP equal to whatever went past the defender's remaining DEF. |
-| **Sturdy** *(later set)* | The first time each turn this would be destroyed in battle, it isn't. Its damage stays, so the next hit that turn destroys it. |
+| **Leap** | Can attack the opponent directly, even if a monster is across. |
+| **Guard** | Only works in defense position. Enemy attacks from this lane and adjacent lanes must target this monster. |
+| **Trample** *(later set)* | When it destroys a defense-position monster, the opponent loses LP equal to the extra damage. |
+| **Sturdy** *(later set)* | The first time each turn this would be destroyed in battle, it isn't. |
 
-- **More than one Guard applies:** the attacker picks which Guard to attack.
-- Once a Guard is destroyed, it stops pulling. Your monsters that haven't attacked yet attack their own lanes as usual.
-- A Guard monster in attack position is a normal monster: it pulls nothing. Switching it to defense position turns
-  Guard on, so opponents can see the wall coming at the end of your turn.
+Notes:
+- Sigils count whether tapped or not.
+- Awaken only checks when played from your hand (Second Wind doesn't Awaken). The bonus lasts while it stays on the board.
+- Guard wins over Leap: a Leap attack from a Guarded lane must target the Guard.
+- If more than one Guard applies, the attacker picks which one to attack. A destroyed Guard stops pulling.
+- Sturdy's damage stays, so the next hit that turn destroys it.
 
 ## 9. Spells
 
@@ -422,6 +434,33 @@ Colossus** (Second Wind can bring one back).
   removal and Ambush stronger so control can beat it.
 - **Rush and Awaken:** does Rush make stopping at 3 Sigils feel like a real plan? Is Awaken worth holding a card for?
 - **Elder Treant:** wiping every DEF 2 or less may hit aggro too hard. Try DEF 1 or less if so.
+
+### Sim results (AI vs AI, 500 games per matchup, v0.7)
+
+`npm run balance` reruns these. The AI is a one-move-ahead greedy player, so it plays aggro better than control;
+read these numbers as a floor for Deepwall, not a verdict.
+
+| Matchup | Avg / median turns | Games in 8–12 | Win rate | First player wins | Stalls |
+|---|---|---|---|---|---|
+| Ember Rush vs Deepwall | 13.6 / 13 | 46% | Ember 94% | 52% | 4% |
+| Ember Rush mirror | 13.1 / 13 | 42% | — | 46% | 0% |
+| Deepwall mirror | 29.8 / 31 | 0% | — | 52% | 53% |
+
+- **Ember vs Deepwall is lopsided, and small card changes don't fix it.** Tried in sims (300–500 games each): Rush
+  off entirely (Ember 90%), sturdier walls Pebblekin 0/4, Ripplefin 1/5, Mudling 1/5 (91%), Firebolt 2 (93%), Stone
+  Crest +4 DEF (96%), LP 25 (90%), LP 25 + walls + 2 Smoke (84%, but games average 17 turns). Deepwall loses because
+  it averages about 1.3 monsters on board through turns 5–12 against Ember's 2.3, and three quarters of its lost LP is
+  direct hits into empty lanes. Attacking a defense-position monster is free, so walls only slow attackers down.
+- **Deepwall mirror drags to deck-out** (about 30 turns). Its finishers don't close games.
+- **Lanes: keep 3.** With 4 lanes, Ember beats Deepwall 97% (vs 94%), games are under 1 turn shorter (12.7), and
+  Guard covers less of the board (a Guard reaches 3 of 4 lanes instead of all 3). A fourth lane gives aggro another
+  empty lane to hit.
+- **Copy limit 2 vs 3** (`tsx engine/scripts/copies.ts`; 3-copy lists are `DECKS_3` in `engine/src/cards.ts`). With 3
+  copies each deck triples its core and cuts its least-played cards. Openings get much steadier for Deepwall (no
+  monster costing 2 or less after the mulligan: 15% → 5%; fewer than 2 monsters summoned by its 3rd turn: 37% → 15%),
+  but it wins less: Ember 93% → 98% (3-copy each side). Games stay at 13–14 turns and first player stays at 52%.
+  Deepwall 3-copy decks that lean on cheap walls lose 98% too; more early walls don't stop direct hits. If the limit
+  goes to 3, only section 2 ("at most 3 copies of any card") and the deck lists in section 14 change.
 
 ## 16. Rules that sit outside this page
 
