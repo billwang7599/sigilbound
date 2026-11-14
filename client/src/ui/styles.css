@@ -1,0 +1,353 @@
+@import "tailwindcss";
+@import "@fontsource/silkscreen/400.css";
+@import "@fontsource/silkscreen/700.css";
+@import "@fontsource/vt323/400.css";
+
+@theme {
+  --font-pixel: "Silkscreen", monospace;
+  --font-body: "VT323", monospace;
+
+  /* Mirrors gfx/palette.ts (PAL). */
+  --color-ink: #14121c;
+  --color-night: #1f1b2e;
+  --color-dusk: #2e2842;
+  --color-plum: #463a5e;
+  --color-mauve: #6b5a85;
+  --color-paper: #fff3d6;
+  --color-paper-mid: #f0dcae;
+  --color-paper-dark: #d4b47f;
+  --color-paper-deep: #9c7a4e;
+  --color-wood: #6b4226;
+  --color-wood-dark: #47291a;
+  --color-wood-deep: #2a1910;
+  --color-wood-light: #925f37;
+  --color-gold: #f2c24e;
+  --color-gold-dark: #c48a22;
+  --color-gold-light: #fff0a6;
+  --color-hp: #e0483c;
+  --color-leaf: #7fae3a;
+  --color-sky: #3fa2d9;
+  --color-arcane: #b58cff;
+  --color-target: #ff6b5b;
+}
+
+html, body, #ui { height: 100%; margin: 0; }
+/* clip, not hidden: hidden boxes can still be scrolled by focus or scrollIntoView, which slid the whole duel up. */
+html, body, #ui { overflow: clip; }
+body {
+  background: var(--color-night);
+  color: var(--color-paper);
+  font-family: var(--font-body);
+  font-size: 18px;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  user-select: none;
+}
+
+/* Everything drawn from pixels stays crisp. */
+img.pixel, canvas.board-canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+canvas.board-canvas { display: block; }
+
+/* A wooden panel: ink outline, plank face with a light top-left bevel, a dark bottom-right bevel, a hard drop shadow. */
+.panel {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 14px, #47291a 14px 16px),
+    var(--color-wood);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px var(--color-wood-light),
+    inset -2px -2px 0 2px var(--color-wood-dark),
+    0 4px 0 0 #14121c99;
+}
+.paper {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px #ffffff,
+    inset -2px -2px 0 2px var(--color-paper-dark),
+    0 4px 0 0 #14121c99;
+}
+.btn {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  padding: 6px 10px 8px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--color-ink),
+    inset 2px 2px 0 2px #ffffff,
+    inset -2px -4px 0 2px var(--color-paper-dark),
+    0 2px 0 0 #14121c;
+  cursor: pointer;
+  image-rendering: pixelated;
+}
+.btn:hover:not(:disabled) { background: #fffaf0; transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 4px 0 2px var(--color-paper-dark); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn-gold {
+  background: var(--color-gold);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px var(--color-gold-light), inset -2px -4px 0 2px var(--color-gold-dark), 0 2px 0 0 #14121c;
+}
+.btn-gold:hover:not(:disabled) { background: #ffd56a; }
+.btn-red {
+  background: #ec6a2c; color: #fff3d6; text-shadow: 1px 1px 0 #3a0f12;
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px #ffa443, inset -2px -4px 0 2px #7d1f1c, 0 2px 0 0 #14121c;
+}
+.btn-red:hover:not(:disabled) { background: #ff7a3a; }
+
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--color-gold); } 50% { box-shadow: 0 0 0 2px #fff3a6; } }
+.glow { animation: pulse-glow 1s steps(2) infinite; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+.shake { animation: shake 0.25s steps(4) 2; }
+
+/* ---- duel UX ---- */
+.pop-in { animation: pop-in 140ms steps(4) both; }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+
+/* Keyword tooltips: underlined words with a pixel-panel tip. */
+.kw { position: relative; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; outline: none; }
+.kw-tip {
+  position: fixed; z-index: 100; padding: 8px 10px; font-family: var(--font-body); font-size: 17px; line-height: 1.05;
+  text-transform: none; text-align: left; font-weight: normal; letter-spacing: normal;
+  background: var(--color-night); color: var(--color-paper);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--color-gold), inset 0 0 0 6px var(--color-ink), 0 4px 0 0 #14121caa;
+  padding: 10px 12px;
+  pointer-events: none; white-space: normal; display: block;
+}
+.kw-chip {
+  font-family: var(--font-pixel); font-size: 9px; text-transform: uppercase; padding: 1px 4px; cursor: help; outline: none;
+  background: var(--color-ink); color: var(--color-gold); box-shadow: inset 0 0 0 1px var(--color-gold);
+}
+.kw-chip:hover, .kw-chip:focus { background: var(--color-gold); color: var(--color-ink); }
+
+/* The fanned hand. */
+/* Once hovered, the card's hover area also covers the space it lifts into (::before), so the pointer stays "on" the
+   card while it moves: no flicker at its bottom edge. Unhovered, that area lets clicks through to the board. */
+.hand-card { transform: translateX(var(--x)) translateY(var(--y)) rotate(var(--r)); transition: transform 120ms ease-out; }
+.hand-card::before { content: ""; position: absolute; left: 0; right: 0; top: calc(-1 * var(--lift, 52px)); bottom: 0; pointer-events: none; }
+.hand-card.hoverable:hover::before, .hand-card.lifted::before { pointer-events: auto; }
+.hand-card .card-inner { position: relative; transition: transform 120ms ease-out; }
+.hand-card.hoverable:hover .card-inner, .hand-card.lifted .card-inner { transform: translateY(calc(-1 * var(--lift, 46px))) rotate(calc(var(--r) * -1)) scale(1.04); }
+/* A monster's ATK/DEF peeking just above the screen edge while the card's own stat row is sunk below it. */
+.hand-peek { position: absolute; left: 6px; pointer-events: none; transition: opacity 100ms; }
+.hand-card.hoverable:hover .hand-peek, .hand-card.lifted .hand-peek { opacity: 0; }
+.hand-card .card-inner.playable { box-shadow: 0 0 0 2px var(--color-gold); }
+.hand-card.draw-in { animation: draw-in 420ms ease-out both; }
+@keyframes draw-in {
+  from { transform: translateX(calc(var(--x) + 420px)) translateY(-60px) rotate(25deg); opacity: 0; }
+  to { transform: translateX(var(--x)) translateY(var(--y)) rotate(var(--r)); opacity: 1; }
+}
+.focus-ring { outline: 3px solid #ffffff; outline-offset: 2px; }
+button:focus-visible, .btn:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; }
+.choice-on { outline: 2px solid #ffffff; }
+
+/* Turn banner: sweeps in, holds, sweeps out. */
+.banner {
+  animation: sweep 1100ms both;
+  box-shadow: 0 4px 0 #14121c, 0 -4px 0 #14121c, 0 8px 0 #c48a22, 0 -8px 0 #c48a22, 0 12px 0 #14121c, 0 -12px 0 #14121c;
+  text-shadow: 3px 3px 0 #c48a22;
+}
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  18% { transform: translateX(0); }
+  78% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+/* Attack / defense choice on a slot. */
+.pos-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 10px; cursor: pointer;
+  background: var(--color-paper); color: var(--color-ink);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset -2px -4px 0 2px var(--color-paper-dark);
+}
+.pos-btn.on { background: var(--color-gold); outline: 3px solid #fff; }
+.pos-btn:hover { transform: translateY(-2px); }
+.pos-icon { display: block; background: var(--color-wood); box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px var(--color-wood-light); }
+.pos-icon.atk { width: 22px; height: 30px; }
+.pos-icon.def { width: 30px; height: 22px; margin: 4px 0; }
+
+/* Pixel scrollbars for lists and logs. */
+* { scrollbar-color: var(--color-mauve) var(--color-night); scrollbar-width: thin; }
+
+/* ---- card effects (ui/hud/CardFx.tsx), gated by <html data-gfx> ---- */
+.cardfx { position: relative; isolation: isolate; --mx: 50%; --my: 30%; --rx: 0deg; --ry: 0deg; --hue: 0deg; }
+.cardfx-holo, .cardfx-gloss, .cardfx-crest { position: absolute; pointer-events: none; display: none; }
+.cardfx-holo, .cardfx-gloss { inset: 4px; }
+html[data-gfx="low"] .cardfx-crest, html[data-gfx="high"] .cardfx-crest { display: block; }
+html[data-gfx="high"] .cardfx-holo, html[data-gfx="high"] .cardfx-gloss { display: block; }
+/* Tilt (big cards only): one flat wrapper moves face + overlays together. No preserve-3d, no transform on .card-face:
+   that 3D sorting context is what made hand cards' faces stop painting under fast hover sweeps. */
+.cardfx-tilt { position: relative; transition: transform 120ms ease-out; }
+html[data-gfx="high"] .cardfx:hover > .cardfx-tilt { transform: perspective(600px) rotateX(var(--rx)) rotateY(var(--ry)); }
+
+/* Foil: a rainbow band that slides with the cursor, dodged onto the card. Always on rare cards, on hover otherwise. */
+.cardfx-holo {
+  opacity: 0; transition: opacity 160ms;
+  background:
+    linear-gradient(115deg, transparent 20%, hsl(calc(var(--hue) + 0deg) 90% 70% / .55) 38%, hsl(calc(var(--hue) + 80deg) 90% 70% / .55) 50%,
+      hsl(calc(var(--hue) + 160deg) 90% 70% / .55) 62%, transparent 80%);
+  background-size: 250% 250%; background-position: var(--mx) var(--my);
+  mix-blend-mode: color-dodge;
+}
+.cardfx:hover .cardfx-holo { opacity: .18; }
+.cardfx-rare .cardfx-holo { opacity: .12; animation: holo-drift 6s steps(48) infinite; }
+.cardfx-rare:hover .cardfx-holo { opacity: .28; animation: none; }
+@keyframes holo-drift { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+
+/* Gloss: a specular spot under the cursor. */
+.cardfx-gloss {
+  opacity: 0; transition: opacity 160ms;
+  background: radial-gradient(circle at var(--mx) var(--my), #ffffffaa 0, #ffffff22 22%, transparent 45%);
+  mix-blend-mode: soft-light;
+}
+.cardfx:hover .cardfx-gloss { opacity: .7; }
+
+/* Per-Crest touches over the art window, all very subtle and stepped so they read as pixel animation. */
+.cardfx-crest { overflow: hidden; mix-blend-mode: screen; opacity: .5; }
+.cardfx-ember { background: repeating-linear-gradient(0deg, transparent 0 6px, #ffa44322 6px 8px, transparent 8px 14px); background-size: 100% 28px; animation: heat 1.6s steps(14) infinite; }
+@keyframes heat { from { background-position: 0 0; } to { background-position: 0 -28px; } }
+.cardfx-tide {
+  background:
+    radial-gradient(ellipse 18% 10% at 30% 40%, #86d6f233, transparent 70%),
+    radial-gradient(ellipse 14% 9% at 70% 60%, #d6f6ff2a, transparent 70%),
+    radial-gradient(ellipse 20% 8% at 50% 80%, #86d6f222, transparent 70%);
+  background-size: 60% 60%; animation: caustic 5s steps(30) infinite alternate;
+}
+@keyframes caustic { from { background-position: 0 0, 30px 10px, 10px 20px; } to { background-position: 40px 20px, 0 30px, 30px 0; } }
+.cardfx-stone { background: radial-gradient(circle 1.5px at 22% 30%, #fff0a6, transparent), radial-gradient(circle 1.5px at 74% 58%, #fff0a6, transparent); animation: glint 3.2s steps(1) infinite; }
+@keyframes glint { 0%, 70% { opacity: 0; } 72%, 80% { opacity: .9; } 82%, 100% { opacity: 0; } }
+.cardfx-gale { background: repeating-linear-gradient(170deg, transparent 0 10px, #eef4ff1c 10px 12px, transparent 12px 26px); background-size: 52px 100%; animation: drift 3s steps(26) infinite; }
+@keyframes drift { from { background-position: 0 0; } to { background-position: 52px 0; } }
+
+/* Graphics menu (ui/hud/GraphicsToggle.tsx). */
+/* Bottom right: the bottom-left corner is the turn dock (End turn, skip controls). */
+.gfx-toggle { position: fixed; right: 8px; bottom: 8px; z-index: 5; transform: scale(var(--u, 1)); transform-origin: bottom right; } /* under menus, popups and reveals */
+
+/* ---- controls HUD in the pixel theme (log strip, turn chip, hints, stat plates) ---- */
+.hud-strip {
+  background: color-mix(in srgb, var(--color-night) 92%, transparent); color: var(--color-paper);
+  box-shadow: inset 0 0 0 1px var(--color-ink), inset 0 0 0 2px var(--color-gold-dark), 0 2px 0 0 #14121caa;
+}
+.hud-well { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-deep), inset 2px 2px 0 1px #00000055; }
+.stat-plate { background: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-wood-light); }
+.text-atk { color: #ffe08a; }
+.text-def { color: #d6f6ff; }
+
+/* ---- HUD scale (ui/layout.ts sets --u for the window size) ---- */
+.u-tl { transform: scale(var(--u, 1)); transform-origin: top left; width: calc(100% / var(--u, 1)); }
+.u-bl { transform: scale(var(--u, 1)); transform-origin: bottom left; }
+.u-bc { left: 50%; width: calc(100vw / var(--u, 1)); transform: translateX(-50%) scale(var(--u, 1)); transform-origin: bottom center; }
+.u-c { transform: scale(var(--u, 1)); transform-origin: center; }
+.u-t { transform: scale(var(--u, 1)); transform-origin: top center; }
+
+/* ---- title screen ---- */
+.title-sky { position: absolute; inset: 0; background-size: cover; background-position: center bottom; image-rendering: pixelated; }
+.title-parade { position: absolute; left: 0; right: 0; bottom: 4%; display: flex; justify-content: space-between; padding: 0 6%; opacity: .9; pointer-events: none; }
+.title-logo {
+  letter-spacing: 2px;
+  text-shadow: 0 -2px 0 #fff0a6, 3px 3px 0 #c48a22, 6px 6px 0 #6b4226, 9px 9px 0 #14121c;
+  animation: logo-float 3.2s steps(8) infinite;
+}
+@keyframes logo-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.title-gem {
+  width: 22px; height: 22px; transform: rotate(45deg); background: var(--color-arcane);
+  box-shadow: inset 4px 4px 0 #e6d6ff, inset -4px -4px 0 #6b4aa8, 0 0 0 3px var(--color-ink), 0 0 18px 2px #b58cff88;
+  animation: gem-pulse 1.6s steps(4) infinite;
+}
+@keyframes gem-pulse { 50% { box-shadow: inset 4px 4px 0 #e6d6ff, inset -4px -4px 0 #6b4aa8, 0 0 0 3px var(--color-ink), 0 0 26px 6px #b58cffaa; } }
+.deck-pick { transition: transform 140ms ease-out; }
+.deck-pick:hover, .deck-pick:focus-visible { transform: translateY(-6px); }
+.deck-stage { width: 100%; display: flex; justify-content: center; padding: 6px 0 2px; box-shadow: inset 0 0 0 2px var(--color-ink); }
+.deck-ember .deck-stage { background: radial-gradient(ellipse 45% 55% at 50% 60%, #bf3a22 0 60%, #7d1f1c 61% 100%); }
+.deck-tide .deck-stage { background: radial-gradient(ellipse 45% 55% at 50% 60%, #2868a8 0 60%, #1b3f6f 61% 100%); }
+.deck-ember:hover { box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px #ffffff, inset -2px -2px 0 2px var(--color-paper-dark), 0 0 0 3px #ec6a2c, 0 8px 0 0 #14121c99; }
+.deck-tide:hover { box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px #ffffff, inset -2px -2px 0 2px var(--color-paper-dark), 0 0 0 3px #3fa2d9, 0 8px 0 0 #14121c99; }
+
+/* Keyboard cursor inside an action menu: a white pixel ring with a pointer, distinct from the gold "picked" state. */
+.kb-sel { outline: 2px solid #ffffff; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6); position: relative; }
+.kb-sel::before { content: "▶"; position: absolute; left: -14px; top: 50%; transform: translateY(-50%); color: #ffffff; font-size: 10px; }
+.kb-sel-text { color: #ffffff; margin-top: 2px; }
+
+/* The Guard redirect caption: Tide blue, like the Guard marks on the board. */
+.guard-note { border-color: #86d6f2; color: #d6f6ff; }
+
+/* The Deck button's count, big enough to read at a glance. */
+.deck-count { font-size: 14px; color: #f2c24e; margin-left: 4px; }
+/* Deck viewer: cards with none left stay listed, greyed, so you can see what's gone. */
+.pile-gone { opacity: 0.35; filter: grayscale(0.8); }
+
+/* ---- Crest buttons (ui/hud/Crest.tsx) ---- */
+.crest-btn {
+  position: relative; display: flex; align-items: center; gap: 5px;
+  font-family: var(--font-pixel); font-size: 11px; line-height: 1;
+  padding: 5px 7px 6px; color: var(--color-paper); background: var(--color-dusk);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--crest), 0 2px 0 0 #14121c;
+  text-shadow: 1px 1px 0 #14121c; white-space: nowrap; cursor: pointer;
+}
+.crest-btn .crest-cost { display: inline-flex; align-items: center; gap: 2px; color: var(--color-gold); }
+.crest-btn .crest-gem { display: inline-block; width: 6px; height: 6px; background: var(--color-arcane); box-shadow: 0 0 0 1px #14121c; transform: rotate(45deg); }
+.crest-btn .crest-key { font-size: 8px; opacity: 0.6; }
+.crest-btn .crest-used {
+  position: absolute; top: -7px; right: -6px; font-size: 7px; padding: 1px 3px 2px;
+  background: var(--color-ink); color: var(--color-paper-dark); box-shadow: 0 0 0 1px var(--color-paper-deep); transform: rotate(6deg);
+}
+@keyframes crest-ready {
+  0%, 100% { box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--crest), 0 0 0 2px var(--crest), 0 2px 0 2px #14121c; }
+  50% { box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px var(--crest-light), 0 0 0 3px var(--crest-light), 0 0 10px 3px var(--crest); }
+}
+.crest-ready { animation: crest-ready 1.2s steps(3) infinite; }
+.crest-ready:hover { background: var(--color-plum); transform: translateY(-1px); }
+.crest-picking { background: var(--color-plum); box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 0 0 4px #ffffff, 0 0 0 2px var(--crest); }
+.crest-off { filter: grayscale(0.85); opacity: 0.6; cursor: default; }
+.crest-rival { cursor: default; font-size: 9px; padding: 4px 6px 5px; gap: 4px; background: var(--color-ink); }
+@keyframes crest-flash {
+  0% { filter: brightness(2.2); transform: scale(1.25); }
+  40% { filter: brightness(1.6); transform: scale(1.1); }
+  100% { filter: none; transform: none; }
+}
+.crest-flash { animation: crest-flash 0.6s steps(6) both; }
+@keyframes crest-caption { 0% { opacity: 0; translate: 0 6px; } 15%, 85% { opacity: 1; translate: 0 0; } 100% { opacity: 0; } }
+.crest-caption {
+  font-family: var(--font-pixel); font-size: 11px; white-space: nowrap; padding: 4px 8px 5px;
+  background: var(--color-gold); color: var(--color-ink); box-shadow: inset 0 0 0 2px var(--color-ink), 0 2px 0 0 #14121c;
+  animation: crest-caption 2s linear both;
+}
+
+/* ---- character creation ---- */
+.create-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; }
+.create-row-on { background: var(--color-paper-mid); box-shadow: inset 0 0 0 2px var(--color-gold-dark); }
+.create-swatch { width: 14px; height: 14px; box-shadow: inset 0 0 0 2px var(--color-ink); display: inline-block; }
+.create-stage {
+  background: radial-gradient(circle at 50% 60%, #fff8e6 0 45%, var(--color-paper-mid) 46% 100%);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset -2px -2px 0 2px var(--color-paper-dark);
+}
+.create-walk {
+  padding: 4px 8px 0;
+  background: repeating-conic-gradient(#8fbf4a 0 25%, #7fae3a 0 50%) 0 0 / 16px 16px;
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+}
+.create-name {
+  font-family: var(--font-pixel); font-size: 14px; padding: 6px 8px; background: #fffaf0; color: var(--color-ink);
+  box-shadow: inset 0 0 0 2px var(--color-ink), inset 2px 2px 0 2px var(--color-paper-dark); outline: none;
+}
+.create-name:focus { box-shadow: inset 0 0 0 2px var(--color-gold-dark), inset 2px 2px 0 2px var(--color-paper-dark); }
+.title-chibi { box-shadow: inset 0 0 0 2px var(--color-ink); background: var(--color-paper-mid); }
+
+/* ---- the overworld (ui/screens/World.tsx) ---- */
+.world-host canvas { display: block; }
+.world-hint { position: absolute; left: 8px; top: 8px; z-index: 5; transform: scale(var(--u, 1)); transform-origin: top left; }
+.world-status { position: absolute; right: 8px; top: 8px; z-index: 5; transform: scale(var(--u, 1)); transform-origin: top right; }
+.world-prompt {
+  position: absolute; left: 50%; bottom: 24px; z-index: 6; transform: translateX(-50%) scale(var(--u, 1)); transform-origin: bottom center;
+  animation: world-prompt-bob 0.8s steps(2) infinite;
+}
+@keyframes world-prompt-bob { 50% { margin-bottom: 2px; } }
+.world-dialogue {
+  position: absolute; left: 50%; bottom: 20px; z-index: 20; width: min(760px, calc(100vw / var(--u, 1) - 32px));
+  transform: translateX(-50%) scale(var(--u, 1)); transform-origin: bottom center; cursor: pointer;
+}
+.world-dialogue-box { animation: pop-in 0.12s steps(3); }
+.world-portrait { flex: none; background: var(--color-paper-mid); box-shadow: inset 0 0 0 2px var(--color-ink), inset 0 -24px 0 0 var(--color-paper-dark); }
+.world-name { color: #bf3a22; }
+.world-more { animation: world-prompt-bob 0.8s steps(2) infinite; }
